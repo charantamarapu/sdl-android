@@ -33,16 +33,14 @@ class GranthaRepository @Inject constructor(
         try {
             val response = api.getCatalog()
             val serverGranthas = response.granthas
+            val serverNames = serverGranthas.map { it.name }
 
-            // Get existing downloaded state
-            val existingMap = mutableMapOf<String, GranthaEntity>()
-            // We can't collect a Flow here, so query directly
-            for (item in serverGranthas) {
-                val existing = dao.getGranthaByName(item.name)
-                if (existing != null) {
-                    existingMap[item.name] = existing
-                }
-            }
+            // Get existing downloaded state in one bulk query
+            val existingList = dao.getAllGranthasOnce()
+            val existingMap = existingList.associateBy { it.name }
+
+            // Delete books that are no longer on the server
+            dao.deleteStaleGranthas(serverNames)
 
             // Upsert: merge server metadata with local download state
             val entities = serverGranthas.map { item ->

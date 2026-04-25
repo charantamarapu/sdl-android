@@ -3,6 +3,7 @@ package com.sdl.grantha.data.remote
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.GET
+import retrofit2.http.Headers
 import retrofit2.http.Path
 import retrofit2.http.Streaming
 
@@ -14,6 +15,7 @@ interface MobileCatalogApi {
     /**
      * Fetch the catalog of all available granthas with metadata.
      */
+    @Headers("Cache-Control: no-cache")
     @GET("/api/mobile/catalog")
     suspend fun getCatalog(): CatalogResponse
 

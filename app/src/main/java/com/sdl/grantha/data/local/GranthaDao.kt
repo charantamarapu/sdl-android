@@ -12,6 +12,9 @@ interface GranthaDao {
     @Query("SELECT * FROM granthas ORDER BY name ASC")
     fun getAllGranthas(): Flow<List<GranthaEntity>>
 
+    @Query("SELECT * FROM granthas")
+    suspend fun getAllGranthasOnce(): List<GranthaEntity>
+
     @Query("SELECT * FROM granthas WHERE isDownloaded = 1 ORDER BY name ASC")
     fun getDownloadedGranthas(): Flow<List<GranthaEntity>>
 
@@ -44,6 +47,9 @@ interface GranthaDao {
 
     @Query("UPDATE granthas SET isDownloaded = 0, downloadDate = NULL, filePath = NULL WHERE isDownloaded = 1")
     suspend fun markAllDeleted()
+
+    @Query("DELETE FROM granthas WHERE name NOT IN (:serverNames)")
+    suspend fun deleteStaleGranthas(serverNames: List<String>)
 
     @Query("SELECT COUNT(*) FROM granthas")
     suspend fun getTotalCount(): Int
