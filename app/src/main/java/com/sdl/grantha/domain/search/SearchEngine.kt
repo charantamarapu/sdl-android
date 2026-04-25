@@ -82,13 +82,7 @@ object SearchEngine {
 
     /**
      * Smart search: exact match ignoring spaces and hyphens.
-     * Port of smart_search() from Python.
-     *
-     * @param textContent The full grantha text
-     * @param query The search query
-     * @param customRules Optional Sanskrit custom equivalence rules
-     * @param maxResults Maximum number of results (0 = unlimited)
-     * @return List of SearchResult
+     * Optimized version using clean text indexing and native indexOf.
      */
     fun smartSearch(
         textContent: String,
@@ -102,68 +96,87 @@ object SearchEngine {
 
         // Generate variants from custom rules
         val queryVariants = SanskritUtils.getCustomVariants(query, customRules)
-
-        // Remove spaces and hyphens, filter empty
-        val queryVariantsClean = queryVariants.map { SanskritUtils.removeSpacesAndHyphens(it) }
+        val queryVariantsClean = queryVariants
+            .map { SanskritUtils.removeSpacesAndHyphens(it).lowercase() }
             .filter { it.isNotEmpty() }
 
         if (queryVariantsClean.isEmpty()) return emptyList()
 
-        // Build regex: allow [\s\-]* between each character of each variant
-        val noisePattern = "[\\s\\-]*"
-        val variantPatterns = queryVariantsClean.map { qClean ->
-            buildString {
-                for (i in qClean.indices) {
-                    append(Regex.escape(qClean[i].toString()))
-                    if (i < qClean.length - 1) {
-                        append(noisePattern)
-                    }
+        // Build page map and clean text once
+        val pageMap = getPageMap(textContent)
+        val cleanChars = StringBuilder(textContent.length)
+        val cleanToOrigIndex = IntArray(textContent.length)
+        var cleanCount = 0
+
+        val pageMarkerRegex = Regex("\\{\\[\\(\\d+\\)\\]\\}")
+        var lastEnd = 0
+        for (match in pageMarkerRegex.findAll(textContent)) {
+            for (idx in lastEnd until match.range.first) {
+                val ch = textContent[idx]
+                if (!ch.isWhitespace() && ch != '-') {
+                    cleanChars.append(ch.lowercaseChar())
+                    cleanToOrigIndex[cleanCount++] = idx
                 }
+            }
+            lastEnd = match.range.last + 1
+        }
+        for (idx in lastEnd until textContent.length) {
+            val ch = textContent[idx]
+            if (!ch.isWhitespace() && ch != '-') {
+                cleanChars.append(ch.lowercaseChar())
+                cleanToOrigIndex[cleanCount++] = idx
             }
         }
 
-        val searchRegex = try {
-            Regex(
-                variantPatterns.joinToString("|"),
-                setOf(RegexOption.IGNORE_CASE)
-            )
-        } catch (_: Exception) {
-            return emptyList()
-        }
-
-        val pageMap = getPageMap(textContent)
+        val cleanText = cleanChars.toString()
         val results = mutableListOf<SearchResult>()
+        val seenRegions = mutableSetOf<Long>()
 
-        for (match in searchRegex.findAll(textContent)) {
-            val startIdx = match.range.first
-            val pageNum = getPageForIndex(startIdx, pageMap)
+        for (qClean in queryVariantsClean) {
+            var startPos = 0
+            while (true) {
+                val matchIdx = cleanText.indexOf(qClean, startPos)
+                if (matchIdx == -1) break
+                
+                // Map back to original
+                val origIdx = cleanToOrigIndex[matchIdx]
+                val pageNum = getPageForIndex(origIdx, pageMap)
+                
+                // Deduplicate by region
+                val regionKey = (pageNum.toLong() shl 32) or (origIdx / 200).toLong()
+                if (regionKey !in seenRegions) {
+                    seenRegions.add(regionKey)
+                    
+                    // Extract context
+                    val contextStart = max(0, origIdx - 100)
+                    val origEnd = cleanToOrigIndex[matchIdx + qClean.length - 1]
+                    val contextEnd = min(textContent.length, origEnd + 100)
+                    val rawContext = textContent.substring(contextStart, contextEnd)
 
-            // Extract context (100 chars before and after)
-            val contextStart = max(0, startIdx - 100)
-            val contextEnd = min(textContent.length, match.range.last + 101)
-            val rawContext = textContent.substring(contextStart, contextEnd)
+                    val cleanContext = rawContext
+                        .replace(PAGE_PATTERN, " ")
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
 
-            // Clean up context: remove page markers, collapse whitespace
-            val cleanContext = rawContext
-                .replace(PAGE_PATTERN, " ")
-                .replace(Regex("\\s+"), " ")
-                .trim()
+                    val subBook = getSubBookForPage(pageNum, subBooks)
 
-            val subBook = getSubBookForPage(pageNum, subBooks)
-
-            results.add(
-                SearchResult(
-                    granthaName = granthaName,
-                    page = pageNum,
-                    contextText = "...$cleanContext...",
-                    subBook = subBook
-                )
-            )
-
+                    results.add(
+                        SearchResult(
+                            granthaName = granthaName,
+                            page = pageNum,
+                            contextText = "...$cleanContext...",
+                            subBook = subBook
+                        )
+                    )
+                }
+                
+                if (maxResults > 0 && results.size >= maxResults) break
+                startPos = matchIdx + 1
+            }
             if (maxResults > 0 && results.size >= maxResults) break
         }
 
-        return results
+        return results.sortedBy { it.page }
     }
 
     /**
