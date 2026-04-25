@@ -26,15 +26,21 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
+    fun provideOkHttpClient(@ApplicationContext context: Context): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
             else HttpLoggingInterceptor.Level.NONE
         }
+        
+        // Add cache to support ETags and 304 Not Modified
+        val cacheSize = 10 * 1024 * 1024L // 10 MB
+        val cache = okhttp3.Cache(context.cacheDir, cacheSize)
+
         return OkHttpClient.Builder()
             .addInterceptor(logging)
+            .cache(cache)
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)  // Large files may take time
+            .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
     }

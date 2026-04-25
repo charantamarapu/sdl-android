@@ -196,6 +196,20 @@ fun LibraryScreen(
                 }
             }
 
+            // Sync status message
+            uiState.syncMessage?.let { message ->
+                Snackbar(
+                    modifier = Modifier.padding(16.dp),
+                    action = {
+                        TextButton(onClick = { viewModel.clearSyncMessage() }) {
+                            Text("OK")
+                        }
+                    }
+                ) {
+                    Text(message)
+                }
+            }
+
             // Error message
             uiState.error?.let { error ->
                 Snackbar(

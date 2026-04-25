@@ -30,7 +30,8 @@ class LibraryViewModel @Inject constructor(
         val isSelectionMode: Boolean = false,
         val totalCount: Int = 0,
         val downloadedCount: Int = 0,
-        val downloadedSizeMb: String = "0"
+        val downloadedSizeMb: String = "0",
+        val syncMessage: String? = null
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -61,11 +62,14 @@ class LibraryViewModel @Inject constructor(
 
     fun syncCatalog() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSyncing = true, error = null) }
+            _uiState.update { it.copy(isSyncing = true, error = null, syncMessage = null) }
             val result = repository.syncCatalog()
             result.fold(
                 onSuccess = { count ->
-                    _uiState.update { it.copy(isSyncing = false) }
+                    _uiState.update { it.copy(
+                        isSyncing = false, 
+                        syncMessage = "Library synced: $count books found"
+                    ) }
                     refreshCounts()
                 },
                 onFailure = { e ->
@@ -73,6 +77,10 @@ class LibraryViewModel @Inject constructor(
                 }
             )
         }
+    }
+
+    fun clearSyncMessage() {
+        _uiState.update { it.copy(syncMessage = null) }
     }
 
     fun toggleDownloadedOnly() {
