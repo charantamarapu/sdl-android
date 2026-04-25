@@ -75,23 +75,23 @@ class SearchViewModel @Inject constructor(
     }
 
     fun updateSuggestions(query: String, target: String) {
-        if (query.length < 2) {
+        val cleanQuery = if (target == "text") query else query.split(",").last().trim()
+        
+        if (cleanQuery.length < 2) {
             _uiState.update { it.copy(suggestions = emptyList()) }
             return
         }
 
-        val q = query.lowercase()
+        val q = cleanQuery.lowercase()
         val suggestions = mutableListOf<Suggestion>()
 
-        // Add book suggestions if target is text
-        if (target == "text") {
-            val bookSuggestions = allGranthas
-                .filter { it.name.lowercase().contains(q) }
-                .map { Suggestion(it.name, SuggestionType.BOOK) }
-            suggestions.addAll(bookSuggestions)
-        }
+        // Add book suggestions
+        val bookSuggestions = allGranthas
+            .filter { it.name.lowercase().contains(q) }
+            .map { Suggestion(it.name, SuggestionType.BOOK) }
+        suggestions.addAll(bookSuggestions)
 
-        // Add tag suggestions for all targets
+        // Add tag suggestions
         val tagSuggestions = allGranthas
             .flatMap { it.tags.split(",").map { t -> t.trim() } }
             .filter { it.isNotBlank() && it.lowercase().contains(q) }
@@ -106,8 +106,18 @@ class SearchViewModel @Inject constructor(
         _uiState.update { state ->
             when (target) {
                 "text" -> state.copy(textQuery = suggestion.value, suggestions = emptyList())
-                "tags" -> state.copy(tagsQuery = suggestion.value, suggestions = emptyList())
-                "negative" -> state.copy(negativeTagsQuery = suggestion.value, suggestions = emptyList())
+                "tags" -> {
+                    val parts = state.tagsQuery.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                    if (parts.isNotEmpty()) parts.removeAt(parts.size - 1)
+                    parts.add(suggestion.value)
+                    state.copy(tagsQuery = parts.joinToString(", ") + ", ", suggestions = emptyList())
+                }
+                "negative" -> {
+                    val parts = state.negativeTagsQuery.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                    if (parts.isNotEmpty()) parts.removeAt(parts.size - 1)
+                    parts.add(suggestion.value)
+                    state.copy(negativeTagsQuery = parts.joinToString(", ") + ", ", suggestions = emptyList())
+                }
                 else -> state
             }
         }
