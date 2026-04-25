@@ -15,7 +15,6 @@ interface MobileCatalogApi {
     /**
      * Fetch the catalog of all available granthas with metadata.
      */
-    @Headers("Cache-Control: no-cache")
     @GET("/api/mobile/catalog")
     suspend fun getCatalog(): CatalogResponse
 
