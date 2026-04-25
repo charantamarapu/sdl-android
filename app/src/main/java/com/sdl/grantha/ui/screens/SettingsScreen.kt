@@ -86,7 +86,7 @@ fun SettingsScreen() {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        "संस्कृत-ग्रन्थालयम्",
+                        "SDL",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary

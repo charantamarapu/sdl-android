@@ -38,13 +38,20 @@ fun LibraryScreen(
         }
     }
 
+    // Show download errors
+    LaunchedEffect(downloadProgress?.error) {
+        downloadProgress?.error?.let { error ->
+            viewModel.setError(error)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text(
-                            "संस्कृत-ग्रन्थालयम्",
+                            "SDL",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )

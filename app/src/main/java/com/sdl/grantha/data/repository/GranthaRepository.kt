@@ -145,7 +145,7 @@ class GranthaRepository @Inject constructor(
 
         try {
             cryptoManager.decryptText(file)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             null
         }
     }

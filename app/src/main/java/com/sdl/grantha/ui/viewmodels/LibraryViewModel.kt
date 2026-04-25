@@ -156,6 +156,10 @@ class LibraryViewModel @Inject constructor(
         _uiState.update { it.copy(error = null) }
     }
 
+    fun setError(error: String) {
+        _uiState.update { it.copy(error = error) }
+    }
+
     private fun refreshCounts() {
         viewModelScope.launch {
             val total = repository.getTotalCount()

@@ -32,11 +32,17 @@ class SdlCryptoManager {
         }
 
         private fun hexToBytes(hex: String): ByteArray {
-            val len = hex.length
+            val cleanHex = if (hex.length % 2 != 0) hex + "0" else hex
+            val len = cleanHex.length
             val data = ByteArray(len / 2)
-            for (i in 0 until len step 2) {
-                data[i / 2] = ((Character.digit(hex[i], 16) shl 4) +
-                        Character.digit(hex[i + 1], 16)).toByte()
+            try {
+                for (i in 0 until len step 2) {
+                    data[i / 2] = ((Character.digit(cleanHex[i], 16) shl 4) +
+                            Character.digit(cleanHex[i + 1], 16)).toByte()
+                }
+            } catch (e: Exception) {
+                // Safe fallback to prevent app crash
+                return ByteArray(32)
             }
             return data
         }

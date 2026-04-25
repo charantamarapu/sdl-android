@@ -23,7 +23,7 @@ sealed class Screen(val route: String) {
     data object Settings : Screen("settings")
     data object Reader : Screen("reader/{granthaName}/{page}") {
         fun createRoute(granthaName: String, page: Int): String {
-            val encoded = URLEncoder.encode(granthaName, "UTF-8")
+            val encoded = URLEncoder.encode(granthaName, "UTF-8").replace("+", "%20")
             return "reader/$encoded/$page"
         }
     }

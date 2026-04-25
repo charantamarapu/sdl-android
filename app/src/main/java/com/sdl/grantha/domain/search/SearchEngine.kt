@@ -13,7 +13,7 @@ import kotlin.math.min
 object SearchEngine {
 
     // Page marker pattern: {[(123)]}
-    private val PAGE_PATTERN = Regex("\\{\\[\\((\\d+)\\)]}")
+    private val PAGE_PATTERN = Regex("\\{\\[\\((\\d+)\\)\\]\\}")
 
     /**
      * Build a map of character indices to page numbers.
@@ -112,12 +112,10 @@ object SearchEngine {
         // Build regex: allow [\s\-]* between each character of each variant
         val noisePattern = "[\\s\\-]*"
         val variantPatterns = queryVariantsClean.map { qClean ->
-            val escaped = Regex.escape(qClean)
-            // Insert noise pattern between each character of the escaped pattern
             buildString {
-                for (i in escaped.indices) {
-                    append(escaped[i])
-                    if (i < escaped.length - 1) {
+                for (i in qClean.indices) {
+                    append(Regex.escape(qClean[i].toString()))
+                    if (i < qClean.length - 1) {
                         append(noisePattern)
                     }
                 }
@@ -203,7 +201,7 @@ object SearchEngine {
         val pageMap = getPageMap(textContent)
 
         // Build clean text (no page markers, no spaces/hyphens) with index mapping
-        val pageMarkerRegex = Regex("\\{\\[\\(\\d+\\)]}")
+        val pageMarkerRegex = Regex("\\{\\[\\(\\d+\\)\\]\\}")
         val cleanChars = StringBuilder()
         val cleanToOrigIndex = mutableListOf<Int>()
 
@@ -470,11 +468,10 @@ object SearchEngine {
             val trimmed = term.trim()
             if (trimmed.isEmpty()) return@mapNotNull null
             val termClean = SanskritUtils.removeSpacesAndHyphens(trimmed)
-            val escaped = Regex.escape(termClean)
             buildString {
-                for (i in escaped.indices) {
-                    append(escaped[i])
-                    if (i < escaped.length - 1) append(noisePattern)
+                for (i in termClean.indices) {
+                    append(Regex.escape(termClean[i].toString()))
+                    if (i < termClean.length - 1) append(noisePattern)
                 }
             }
         }

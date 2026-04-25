@@ -83,8 +83,8 @@ class ReaderViewModel @Inject constructor(
                         grantha = grantha
                     )
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, error = e.message) }
+            } catch (e: Throwable) {
+                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Unknown Error") }
             }
         }
     }

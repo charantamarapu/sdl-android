@@ -124,23 +124,8 @@ class SearchViewModel @Inject constructor(
 
             try {
                 val results = withContext(Dispatchers.Default) {
-                    // Load text content of all downloaded granthas
                     val downloadedFlow = repository.getDownloadedGranthas()
                     val downloaded = downloadedFlow.first()
-
-                    val granthaTexts = mutableMapOf<String, Triple<String, String, String>>()
-
-                    for ((index, grantha) in downloaded.withIndex()) {
-                        _uiState.update {
-                            it.copy(
-                                searchProgress = index.toFloat() / downloaded.size,
-                                currentBook = "Loading: ${grantha.name}"
-                            )
-                        }
-
-                        val text = repository.getGranthaText(grantha.name) ?: continue
-                        granthaTexts[grantha.name] = Triple(text, grantha.tags, grantha.booksRaw)
-                    }
 
                     val tagQueries = state.tagsQuery.split(",")
                         .map { it.trim().lowercase() }
@@ -150,25 +135,36 @@ class SearchViewModel @Inject constructor(
                         .map { it.trim().lowercase() }
                         .filter { it.isNotBlank() }
 
-                    SearchEngine.searchAll(
-                        granthaTexts = granthaTexts,
-                        textQueries = textQueries,
-                        textLogic = state.textLogic,
-                        fuzzyPct = state.fuzzyPct,
-                        tagQueries = tagQueries,
-                        tagsLogic = state.tagsLogic,
-                        negativeTagQueries = negTagQueries,
-                        customRules = state.customRules.ifEmpty { null },
-                        maxPerBook = state.maxPerBook,
-                        onProgress = { searched, total, bookName ->
-                            _uiState.update {
-                                it.copy(
-                                    searchProgress = searched.toFloat() / total,
-                                    currentBook = bookName
-                                )
-                            }
+                    val allResults = mutableListOf<SearchResult>()
+
+                    for ((index, grantha) in downloaded.withIndex()) {
+                        _uiState.update {
+                            it.copy(
+                                searchProgress = index.toFloat() / downloaded.size,
+                                currentBook = "Searching: ${grantha.name}"
+                            )
                         }
-                    )
+
+                        val text = repository.getGranthaText(grantha.name)
+                        if (text == null) continue
+
+                        val singleMap = mapOf(grantha.name to Triple(text, grantha.tags, grantha.booksRaw))
+
+                        val partialResults = SearchEngine.searchAll(
+                            granthaTexts = singleMap,
+                            textQueries = textQueries,
+                            textLogic = state.textLogic,
+                            fuzzyPct = state.fuzzyPct,
+                            tagQueries = tagQueries,
+                            tagsLogic = state.tagsLogic,
+                            negativeTagQueries = negTagQueries,
+                            customRules = state.customRules.ifEmpty { null },
+                            maxPerBook = state.maxPerBook,
+                            onProgress = null // Progress is handled by the outer loop now
+                        )
+                        allResults.addAll(partialResults)
+                    }
+                    allResults
                 }
 
                 // Add highlighting to results
@@ -190,9 +186,9 @@ class SearchViewModel @Inject constructor(
                         searchProgress = 1f
                     )
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.update {
-                    it.copy(isSearching = false, error = e.message ?: "Search failed")
+                    it.copy(isSearching = false, error = e.message ?: "Search failed: Error")
                 }
             }
         }

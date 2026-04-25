@@ -65,7 +65,7 @@ class GranthaDownloadManager(
         try {
             _downloadProgress.value = DownloadProgress(name, 0, 0)
 
-            val encodedName = URLEncoder.encode(name, "UTF-8")
+            val encodedName = URLEncoder.encode(name, "UTF-8").replace("+", "%20")
             val response = api.downloadGrantha(encodedName)
 
             if (!response.isSuccessful || response.body() == null) {
