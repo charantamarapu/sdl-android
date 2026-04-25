@@ -117,7 +117,7 @@ fun SearchScreen(
                                     if (!focusState.isFocused) showTextSuggestions = false
                                 },
                             placeholder = { 
-                                Text(if (uiState.isAdvancedMode) "Search inside books..." else "Search books...") 
+                                Text(if (uiState.isAdvancedMode) "Search Inside Books..." else "Search Books...") 
                             },
                             // ... leadingIcon, trailingIcon, etc ...
                             leadingIcon = { 
@@ -271,7 +271,7 @@ fun SearchScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .onFocusChanged { isTagsFocused = it.isFocused },
-                                label = { Text("Include Tags") },
+                                label = { Text("Include Books or Tags") },
                                 placeholder = { Text("e.g., वेदान्तः, रामानुजः") },
                                 singleLine = true
                             )
@@ -322,7 +322,7 @@ fun SearchScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .onFocusChanged { isNegTagsFocused = it.isFocused },
-                                label = { Text("Exclude Tags") },
+                                label = { Text("Exclude Books or Tags") },
                                 placeholder = { Text("e.g., न्यायः") },
                                 singleLine = true,
                                 colors = OutlinedTextFieldDefaults.colors(
