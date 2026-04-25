@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -178,7 +179,12 @@ fun LibraryScreen(
                         selected = true,
                         onClick = { showSortMenu = true },
                         label = { Text("Sort: ${uiState.sortOption.name.lowercase().replaceFirstChar { it.uppercase() }}") },
-                        trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) }
+                        trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = SdlBlue,
+                            selectedLabelColor = Color.White,
+                            selectedTrailingIconColor = Color.White
+                        )
                     )
                     DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
                         LibraryViewModel.SortOption.entries.forEach { option ->
@@ -198,7 +204,7 @@ fun LibraryScreen(
                     Icon(
                         if (uiState.isAscending) Icons.Filled.South else Icons.Filled.North,
                         contentDescription = if (uiState.isAscending) "Descending" else "Ascending",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = SdlBlue
                     )
                 }
             }

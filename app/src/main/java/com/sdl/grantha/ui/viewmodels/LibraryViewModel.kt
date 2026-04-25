@@ -84,6 +84,16 @@ class LibraryViewModel @Inject constructor(
 
     init {
         refreshCounts()
+
+        // Update counts during bulk downloads
+        viewModelScope.launch {
+            bulkProgress
+                .map { it?.currentIndex }
+                .distinctUntilChanged()
+                .collect { 
+                    refreshCounts()
+                }
+        }
     }
 
     fun syncCatalog() {
@@ -160,6 +170,7 @@ class LibraryViewModel @Inject constructor(
 
     fun downloadSingle(name: String) {
         viewModelScope.launch {
+            repository.resetCancel()
             repository.downloadGrantha(name)
             refreshCounts()
         }

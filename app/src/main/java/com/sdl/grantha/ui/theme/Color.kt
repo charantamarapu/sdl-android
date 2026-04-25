@@ -41,6 +41,11 @@ val NotDownloadedGray = Color(0xFF9E9E9E)
 val ErrorRed = Color(0xFFD32F2F)
 val ProgressAmber = Color(0xFFF5A623)
 
+// Brand Blue
+val SdlBlue = Color(0xFF1976D2)
+val SdlBlueLight = Color(0xFF42A5F5)
+val SdlBlueDark = Color(0xFF1565C0)
+
 // Highlight color for search results
 val HighlightYellow = Color(0xFFFFF176)
 val HighlightYellowDark = Color(0xFF5E5200)

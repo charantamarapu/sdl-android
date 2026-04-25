@@ -105,6 +105,10 @@ class GranthaRepository @Inject constructor(
 
     fun cancelDownloads() = downloadManager.cancelDownloads()
 
+    fun resetCancel() = downloadManager.resetCancel()
+
+    fun isCancelled() = downloadManager.isCancelled()
+
     fun getDownloadProgress() = downloadManager.downloadProgress
 
     fun getBulkProgress() = downloadManager.bulkProgress

@@ -14,6 +14,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.sdl.grantha.ui.screens.*
+import com.sdl.grantha.ui.theme.*
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -77,7 +78,14 @@ fun NavGraph() {
                                     launchSingleTop = true
                                     restoreState = true
                                 }
-                            }
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = SdlBlue,
+                                selectedTextColor = SdlBlue,
+                                indicatorColor = SdlBlue.copy(alpha = 0.12f),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         )
                     }
                 }

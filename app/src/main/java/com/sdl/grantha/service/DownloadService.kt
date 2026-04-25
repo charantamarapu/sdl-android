@@ -42,6 +42,9 @@ class DownloadService : Service() {
         when (intent?.action) {
             ACTION_DOWNLOAD -> {
                 val names = intent.getStringArrayListExtra(EXTRA_GRANTHA_NAMES) ?: return START_NOT_STICKY
+                
+                // Reset cancellation state before starting new download
+                repository.resetCancel()
 
                 val notification = buildNotification("Preparing download...", 0, names.size)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -57,7 +60,15 @@ class DownloadService : Service() {
                     for (name in names) {
                         updateNotification("Downloading: $name", completed, names.size)
                         val result = repository.downloadGrantha(name)
-                        if (result != null) completed++ else failed++
+                        if (result != null) {
+                            completed++
+                        } else {
+                            failed++
+                            // If download failed because of cancellation, stop the entire process
+                            if (repository.isCancelled()) {
+                                break
+                            }
+                        }
                     }
 
                     val msg = if (failed == 0) "Downloaded $completed granthas"

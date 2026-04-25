@@ -45,7 +45,9 @@ class GranthaDownloadManager(
     val bulkProgress: Flow<BulkProgress?> = _bulkProgress.asStateFlow()
 
     @Volatile
-    private var isCancelled = false
+    private var _isCancelled = false
+
+    fun isCancelled() = _isCancelled
 
     private fun getGranthasDir(): File {
         val dir = File(context.filesDir, "granthas")
@@ -84,7 +86,7 @@ class GranthaDownloadManager(
                     var read: Int
 
                     while (inputStream.read(buffer).also { read = it } != -1) {
-                        if (isCancelled) {
+                        if (isCancelled()) {
                             file.delete()
                             _downloadProgress.value = DownloadProgress(name, 0, 0, error = "Cancelled")
                             return@withContext null
@@ -121,7 +123,7 @@ class GranthaDownloadManager(
      * Download multiple granthas sequentially.
      */
     suspend fun downloadMultiple(names: List<String>) = withContext(Dispatchers.IO) {
-        isCancelled = false
+        _isCancelled = false
         var failedCount = 0
 
         // Calculate total bytes
@@ -134,7 +136,7 @@ class GranthaDownloadManager(
         var downloadedBytesAll = 0L
 
         for ((index, name) in names.withIndex()) {
-            if (isCancelled) break
+            if (isCancelled()) break
 
             val grantha = dao.getGranthaByName(name)
             val currentGranthaSize = grantha?.sizeBytes ?: 0L
@@ -185,7 +187,11 @@ class GranthaDownloadManager(
     }
 
     fun cancelDownloads() {
-        isCancelled = true
+        _isCancelled = true
+    }
+
+    fun resetCancel() {
+        _isCancelled = false
     }
 
     fun clearProgress() {
