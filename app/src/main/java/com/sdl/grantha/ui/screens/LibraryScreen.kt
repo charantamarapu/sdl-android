@@ -36,11 +36,9 @@ fun LibraryScreen(
     val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle(initialValue = null)
     val bulkProgress by viewModel.bulkProgress.collectAsStateWithLifecycle(initialValue = null)
 
-    // Initial catalog sync
+    // Automatic catalog sync on entry
     LaunchedEffect(Unit) {
-        if (granthas.isEmpty()) {
-            viewModel.syncCatalog()
-        }
+        viewModel.syncCatalog(silent = true)
     }
 
     // Show download errors
@@ -129,7 +127,7 @@ fun LibraryScreen(
                     text = { Text("Download ${uiState.selectedGranthas.size}") },
                     containerColor = MaterialTheme.colorScheme.primary
                 )
-            } else {
+            } else if (uiState.downloadedCount < uiState.totalCount) {
                 FloatingActionButton(
                     onClick = { viewModel.downloadAll() },
                     containerColor = MaterialTheme.colorScheme.primary
@@ -181,7 +179,7 @@ fun LibraryScreen(
                         label = { Text("Sort: ${uiState.sortOption.name.lowercase().replaceFirstChar { it.uppercase() }}") },
                         trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = SdlBlue,
+                            selectedContainerColor = MaterialTheme.colorScheme.primary,
                             selectedLabelColor = Color.White,
                             selectedTrailingIconColor = Color.White
                         )
@@ -204,7 +202,7 @@ fun LibraryScreen(
                     Icon(
                         if (uiState.isAscending) Icons.Filled.South else Icons.Filled.North,
                         contentDescription = if (uiState.isAscending) "Descending" else "Ascending",
-                        tint = SdlBlue
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }

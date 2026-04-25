@@ -32,6 +32,7 @@ class SearchViewModel @Inject constructor(
         val tagsLogic: String = "or",
         val fuzzyPct: Int = 0,
         val isSearching: Boolean = false,
+        val isDeepSearching: Boolean = false,
         val searchProgress: Float = 0f,
         val currentBook: String = "",
         val results: List<SearchResult> = emptyList(), // Main results (one per book)
@@ -46,7 +47,7 @@ class SearchViewModel @Inject constructor(
         val customRulesText: String = "",
         val maxPerBook: Int = 20,
         val isAdvancedMode: Boolean = false,
-        val isOptionsExpanded: Boolean = true,
+        val isOptionsExpanded: Boolean = false,
         val negativeTagsQuery: String = "",
         val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList(),
         val suggestions: List<Suggestion> = emptyList()
@@ -102,11 +103,16 @@ class SearchViewModel @Inject constructor(
     }
 
     fun selectSuggestion(suggestion: Suggestion, target: String) {
-        when (target) {
-            "text" -> _uiState.update { it.copy(textQuery = suggestion.value, suggestions = emptyList()) }
-            "tags" -> _uiState.update { it.copy(tagsQuery = suggestion.value, suggestions = emptyList()) }
-            "negative" -> _uiState.update { it.copy(negativeTagsQuery = suggestion.value, suggestions = emptyList()) }
+        _uiState.update { state ->
+            when (target) {
+                "text" -> state.copy(textQuery = suggestion.value, suggestions = emptyList(), isOptionsExpanded = false)
+                "tags" -> state.copy(tagsQuery = suggestion.value, suggestions = emptyList(), isOptionsExpanded = false)
+                "negative" -> state.copy(negativeTagsQuery = suggestion.value, suggestions = emptyList(), isOptionsExpanded = false)
+                else -> state
+            }
         }
+        // Automatically trigger search after selecting a suggestion
+        search(isAdvanced = _uiState.value.isAdvancedMode)
     }
 
     fun setTextQuery(query: String) {
@@ -199,7 +205,8 @@ class SearchViewModel @Inject constructor(
                     hasSearched = false,
                     cachedBookSnippets = emptyMap(),
                     selectedBookResults = null,
-                    bookSnippets = emptyList()
+                    bookSnippets = emptyList(),
+                    isOptionsExpanded = false
                 ) 
             }
             try {
@@ -255,12 +262,13 @@ class SearchViewModel @Inject constructor(
                     cachedBookSnippets = emptyMap(),
                     selectedBookResults = null,
                     bookSnippets = emptyList(),
-                    hasSearched = false
+                    hasSearched = false,
+                    isOptionsExpanded = false
                 ) 
             }
 
             try {
-                val results = withContext(Dispatchers.Default) {
+                withContext(Dispatchers.Default) {
                     val downloadedFlow = repository.getDownloadedGranthas()
                     val downloaded = downloadedFlow.first()
 
@@ -268,7 +276,7 @@ class SearchViewModel @Inject constructor(
                         withContext(Dispatchers.Main) {
                             _uiState.update { it.copy(isSearching = false, error = "Advanced search only works on downloaded books. Please download some books first.") }
                         }
-                        return@withContext emptyList<SearchResult>()
+                        return@withContext
                     }
 
                     val tagQueries = state.tagsQuery.split(",")
@@ -294,7 +302,7 @@ class SearchViewModel @Inject constructor(
                                     val progress = booksProcessed.toFloat() / totalBooks
                                     _uiState.update { it.copy(searchProgress = progress) }
                                 }
-                                emit(emptyList<SearchResult>())
+                                emit(Unit)
                                 return@flow
                             }
 
@@ -314,41 +322,37 @@ class SearchViewModel @Inject constructor(
                                 onProgress = null
                             )
 
+                            val highlighted = partialResults.map { result ->
+                                val h = SearchEngine.highlightText(
+                                    result.contextText,
+                                    textQueries,
+                                    state.fuzzyPct,
+                                    state.customRules.ifEmpty { null }
+                                )
+                                result.copy(highlightedText = h)
+                            }
+
                             synchronized(this@SearchViewModel) {
                                 booksProcessed++
                                 val progress = booksProcessed.toFloat() / totalBooks
                                 _uiState.update { 
                                     it.copy(
                                         searchProgress = progress,
-                                        currentBook = "Searching: ${grantha.name}"
+                                        currentBook = grantha.name,
+                                        results = it.results + highlighted
                                     ) 
                                 }
                             }
-                            emit(partialResults)
+                            emit(Unit)
                         }
-                    }.toList().flatten()
-                }
-
-                // Add highlighting to results
-                val highlightedResults = withContext(Dispatchers.Default) {
-                    results.map { result ->
-                        val highlighted = SearchEngine.highlightText(
-                            result.contextText,
-                            textQueries,
-                            state.fuzzyPct,
-                            state.customRules.ifEmpty { null }
-                        )
-                        result.copy(highlightedText = highlighted)
-                    }
+                    }.collect()
                 }
 
                 _uiState.update {
                     it.copy(
                         isSearching = false,
-                        results = highlightedResults,
                         hasSearched = true,
-                        searchProgress = 1f,
-                        isOptionsExpanded = false
+                        searchProgress = 1f
                     )
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -400,7 +404,7 @@ class SearchViewModel @Inject constructor(
         if (textQueries.isEmpty()) return
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isSearching = true, selectedBookResults = bookName, bookSnippets = emptyList()) }
+            _uiState.update { it.copy(isDeepSearching = true, selectedBookResults = bookName, bookSnippets = emptyList()) }
             
             try {
                 withContext(Dispatchers.IO) {
@@ -422,19 +426,31 @@ class SearchViewModel @Inject constructor(
                         }
                         
                         val sorted = allSnippets.sortedBy { it.page }
+                        
+                        // Add highlighting to deep search results
+                        val highlighted = sorted.map { result ->
+                            val h = SearchEngine.highlightText(
+                                result.contextText,
+                                textQueries,
+                                state.fuzzyPct,
+                                state.customRules.ifEmpty { null }
+                            )
+                            result.copy(highlightedText = h)
+                        }
+
                         _uiState.update { 
                             it.copy(
-                                isSearching = false, 
-                                bookSnippets = sorted,
-                                cachedBookSnippets = it.cachedBookSnippets + (bookName to sorted) // Update cache
+                                isDeepSearching = false, 
+                                bookSnippets = highlighted,
+                                cachedBookSnippets = it.cachedBookSnippets + (bookName to highlighted) // Update cache
                             ) 
                         }
                     } else {
-                        _uiState.update { it.copy(isSearching = false, error = "Book text not found") }
+                        _uiState.update { it.copy(isDeepSearching = false, error = "Book text not found") }
                     }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(isSearching = false, error = e.message) }
+                _uiState.update { it.copy(isDeepSearching = false, error = e.message) }
             }
         }
     }

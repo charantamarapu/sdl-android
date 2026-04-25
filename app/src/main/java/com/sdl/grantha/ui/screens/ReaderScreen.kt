@@ -26,6 +26,7 @@ import com.sdl.grantha.ui.viewmodels.ReaderViewModel
 fun ReaderScreen(
     granthaName: String,
     startPage: Int = 1,
+    highlightQuery: String? = null,
     onBack: () -> Unit = {},
     viewModel: ReaderViewModel = hiltViewModel()
 ) {
@@ -35,8 +36,8 @@ fun ReaderScreen(
     var showGoToDialog by remember { mutableStateOf(false) }
 
     // Load grantha on first composition
-    LaunchedEffect(granthaName, startPage) {
-        viewModel.loadGrantha(granthaName, startPage)
+    LaunchedEffect(granthaName, startPage, highlightQuery) {
+        viewModel.loadGrantha(granthaName, startPage, highlightQuery)
     }
 
     // Default to Archive view for non-downloaded books
@@ -197,6 +198,46 @@ fun ReaderScreen(
                     val currentPageContent = uiState.pages.find { it.pageNumber == uiState.currentPage }
 
                     if (currentPageContent != null) {
+                        val text = currentPageContent.text
+                        val highlightQuery = uiState.highlightQuery
+                        
+                        val annotatedString = remember(text, highlightQuery) {
+                            androidx.compose.ui.text.buildAnnotatedString {
+                                append(text)
+                                if (!highlightQuery.isNullOrBlank()) {
+                                    val queries = highlightQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                                    val noisePattern = "[\\s\\-]*"
+                                    
+                                    queries.forEach { q ->
+                                        // Smart regex that ignores spaces and hyphens between characters
+                                        val termClean = q.replace(Regex("[\\s\\-]"), "")
+                                        if (termClean.isEmpty()) return@forEach
+                                        
+                                        val regexString = buildString {
+                                            for (i in termClean.indices) {
+                                                append(Regex.escape(termClean[i].toString()))
+                                                if (i < termClean.length - 1) append(noisePattern)
+                                            }
+                                        }
+                                        
+                                        try {
+                                            val regex = Regex(regexString, RegexOption.IGNORE_CASE)
+                                            regex.findAll(text).forEach { match ->
+                                                addStyle(
+                                                    style = androidx.compose.ui.text.SpanStyle(
+                                                        background = androidx.compose.ui.graphics.Color.Yellow.copy(alpha = 0.4f),
+                                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                                    ),
+                                                    start = match.range.first,
+                                                    end = match.range.last + 1
+                                                )
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                                }
+                            }
+                        }
+
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -204,7 +245,7 @@ fun ReaderScreen(
                                 .padding(16.dp)
                         ) {
                             Text(
-                                text = currentPageContent.text,
+                                text = annotatedString,
                                 style = MaterialTheme.typography.bodyLarge
                             )
                         }

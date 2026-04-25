@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -27,12 +28,19 @@ import com.sdl.grantha.ui.viewmodels.SearchViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
-    onNavigateToReader: (String, Int) -> Unit = { _, _ -> },
+    onNavigateToReader: (String, Int, String?) -> Unit = { _, _, _ -> },
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-// Removed local showAdvanced for persistence
-
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    
+    var isAnyFieldFocused by remember { mutableStateOf(false) }
+    var showTextSuggestions by remember { mutableStateOf(false) }
+    
+    // Ensure no focus on start
+    LaunchedEffect(Unit) {
+        focusManager.clearFocus()
+    }
     Scaffold(
         // TopAppBar removed as per user request
     ) { padding ->
@@ -82,7 +90,6 @@ fun SearchScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Styled Search Input
-                    var showTextSuggestions by remember { mutableStateOf(false) }
                     
                     Box(
                         modifier = Modifier
@@ -100,7 +107,15 @@ fun SearchScreen(
                                     showTextSuggestions = false
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged { focusState ->
+                                    isAnyFieldFocused = focusState.isFocused
+                                    if (focusState.isFocused && !uiState.isOptionsExpanded) {
+                                        viewModel.toggleOptionsExpanded()
+                                    }
+                                    if (!focusState.isFocused) showTextSuggestions = false
+                                },
                             placeholder = { 
                                 Text(if (uiState.isAdvancedMode) "Search inside books..." else "Search books...") 
                             },
@@ -113,7 +128,15 @@ fun SearchScreen(
                                 ) 
                             },
                             trailingIcon = {
-                                if (uiState.textQuery.isNotBlank()) {
+                                if (uiState.isSearching) {
+                                    IconButton(onClick = { viewModel.stopSearch() }) {
+                                        Icon(
+                                            Icons.Filled.Stop, 
+                                            contentDescription = "Stop search",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                } else if (uiState.textQuery.isNotBlank()) {
                                     IconButton(onClick = { 
                                         viewModel.setTextQuery("")
                                         showTextSuggestions = false
@@ -157,6 +180,7 @@ fun SearchScreen(
                                             )
                                         },
                                         modifier = Modifier.clickable {
+                                            focusManager.clearFocus()
                                             viewModel.selectSuggestion(suggestion, "text")
                                             showTextSuggestions = false
                                         }
@@ -169,43 +193,25 @@ fun SearchScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Search Button (Full width, premium look)
-                    Button(
-                        onClick = { 
-                            if (uiState.isSearching) viewModel.stopSearch() 
-                            else viewModel.search(uiState.isAdvancedMode) 
-                        },
-                        enabled = uiState.isSearching || (uiState.textQuery.isNotBlank() || uiState.tagsQuery.isNotBlank()),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .height(50.dp),
-                        shape = MaterialTheme.shapes.medium,
-                        colors = if (uiState.isSearching) 
-                            ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        else 
-                            ButtonDefaults.buttonColors(),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                    AnimatedVisibility(
+                        visible = isAnyFieldFocused && !uiState.isSearching && (uiState.textQuery.isNotBlank() || uiState.tagsQuery.isNotBlank())
                     ) {
-                        if (uiState.isSearching) {
-                            Icon(Icons.Filled.Stop, contentDescription = "Stop Search")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Stop Search", fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
+                        Button(
+                            onClick = { 
+                                focusManager.clearFocus()
+                                viewModel.search(uiState.isAdvancedMode) 
+                            },
+                            enabled = (uiState.textQuery.isNotBlank() || uiState.tagsQuery.isNotBlank()),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(50.dp),
+                            shape = MaterialTheme.shapes.medium,
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                        ) {
                             Icon(Icons.Filled.Search, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                if (uiState.isAdvancedMode) "Search Inside Books" else "Search for Books",
-                                fontWeight = FontWeight.Bold
-                            )
+                            Text("Search", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -263,7 +269,9 @@ fun SearchScreen(
                                     viewModel.updateSuggestions(it, "tags")
                                     showTagSuggestions = it.length >= 2
                                 },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onFocusChanged { isAnyFieldFocused = it.isFocused },
                                 label = { Text("Include Tags") },
                                 placeholder = { Text("e.g., वेदान्तः, रामानुजः") },
                                 singleLine = true
@@ -304,7 +312,9 @@ fun SearchScreen(
                                     viewModel.updateSuggestions(it, "negative")
                                     showNegativeSuggestions = it.length >= 2
                                 },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onFocusChanged { isAnyFieldFocused = it.isFocused },
                                 label = { Text("Exclude Tags") },
                                 placeholder = { Text("e.g., न्यायः") },
                                 singleLine = true,
@@ -413,24 +423,11 @@ fun SearchScreen(
 
             // Search progress
             if (uiState.isSearching && uiState.isAdvancedMode) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        DownloadProgressBar(
-                            progress = uiState.searchProgress,
-                            label = "Searching: ${uiState.currentBook}"
-                        )
-                    }
-                    IconButton(
-                        onClick = { viewModel.stopSearch() },
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Icon(Icons.Filled.Stop, contentDescription = "Stop")
-                    }
+                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    DownloadProgressBar(
+                        progress = uiState.searchProgress,
+                        label = "Searching: ${uiState.currentBook}"
+                    )
                 }
             }
 
@@ -502,7 +499,13 @@ fun SearchScreen(
                         HorizontalDivider(thickness = 0.5.dp)
                     }
                     
-                    if (uiState.bookSnippets.isNotEmpty()) {
+                    if (uiState.isDeepSearching) {
+                        item {
+                            Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    } else if (uiState.bookSnippets.isNotEmpty()) {
                         items(
                             items = uiState.bookSnippets,
                             key = { "snippet_${it.granthaName}_${it.page}_${it.contextText.hashCode()}" }
@@ -510,11 +513,11 @@ fun SearchScreen(
                             Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                                 SearchResultCard(
                                     result = result,
-                                    onClick = { onNavigateToReader(result.granthaName, result.page) }
+                                    onClick = { onNavigateToReader(result.granthaName, result.page, uiState.textQuery) }
                                 )
                             }
                         }
-                    } else if (!uiState.isSearching) {
+                    } else if (!uiState.isDeepSearching) {
                         item {
                             NoResultsView("No matches found inside this book")
                         }
@@ -546,7 +549,7 @@ fun SearchScreen(
                         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                             GranthaCard(
                                 grantha = grantha,
-                                onClick = { onNavigateToReader(grantha.name, 1) },
+                                onClick = { onNavigateToReader(grantha.name, 1, uiState.textQuery) },
                                 onDownloadClick = { viewModel.downloadGrantha(grantha.name) },
                                 onDeleteClick = { viewModel.deleteGrantha(grantha.name) }
                             )

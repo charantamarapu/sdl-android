@@ -22,10 +22,14 @@ sealed class Screen(val route: String) {
     data object Library : Screen("library")
     data object Search : Screen("search")
     data object Settings : Screen("settings")
-    data object Reader : Screen("reader/{granthaName}/{page}") {
-        fun createRoute(granthaName: String, page: Int): String {
-            val encoded = URLEncoder.encode(granthaName, "UTF-8").replace("+", "%20")
-            return "reader/$encoded/$page"
+    data object Reader : Screen("reader/{granthaName}/{page}?highlight={highlight}") {
+        fun createRoute(granthaName: String, page: Int, highlight: String? = null): String {
+            val encodedName = URLEncoder.encode(granthaName, "UTF-8").replace("+", "%20")
+            val base = "reader/$encodedName/$page"
+            return if (highlight != null) {
+                val encodedHighlight = URLEncoder.encode(highlight, "UTF-8").replace("+", "%20")
+                "$base?highlight=$encodedHighlight"
+            } else base
         }
     }
 }
@@ -80,9 +84,9 @@ fun NavGraph() {
                                 }
                             },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = SdlBlue,
-                                selectedTextColor = SdlBlue,
-                                indicatorColor = SdlBlue.copy(alpha = 0.12f),
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -107,8 +111,8 @@ fun NavGraph() {
 
             composable(Screen.Search.route) {
                 SearchScreen(
-                    onNavigateToReader = { name, page ->
-                        navController.navigate(Screen.Reader.createRoute(name, page))
+                    onNavigateToReader = { name, page, highlight ->
+                        navController.navigate(Screen.Reader.createRoute(name, page, highlight))
                     }
                 )
             }
@@ -121,16 +125,19 @@ fun NavGraph() {
                 route = Screen.Reader.route,
                 arguments = listOf(
                     navArgument("granthaName") { type = NavType.StringType },
-                    navArgument("page") { type = NavType.IntType; defaultValue = 1 }
+                    navArgument("page") { type = NavType.IntType; defaultValue = 1 },
+                    navArgument("highlight") { type = NavType.StringType; nullable = true; defaultValue = null }
                 )
             ) { backStackEntry ->
                 val encodedName = backStackEntry.arguments?.getString("granthaName") ?: ""
                 val granthaName = URLDecoder.decode(encodedName, "UTF-8")
                 val page = backStackEntry.arguments?.getInt("page") ?: 1
+                val highlight = backStackEntry.arguments?.getString("highlight")
 
                 ReaderScreen(
                     granthaName = granthaName,
                     startPage = page,
+                    highlightQuery = highlight,
                     onBack = { navController.popBackStack() }
                 )
             }

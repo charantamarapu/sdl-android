@@ -34,7 +34,8 @@ class ReaderViewModel @Inject constructor(
         val currentSubBook: String? = null,
         val grantha: GranthaEntity? = null,
         val fullText: String? = null,
-        val pageMap: List<Pair<Int, Int>>? = null
+        val pageMap: List<Pair<Int, Int>>? = null,
+        val highlightQuery: String? = null
     )
 
     data class PageContent(
@@ -45,9 +46,9 @@ class ReaderViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
-    fun loadGrantha(name: String, startPage: Int = 1) {
+    fun loadGrantha(name: String, startPage: Int = 1, highlight: String? = null) {
         viewModelScope.launch {
-            _uiState.update { it.copy(granthaName = name, isLoading = true, error = null) }
+            _uiState.update { it.copy(granthaName = name, highlightQuery = highlight, isLoading = true, error = null) }
 
             try {
                 val grantha = repository.getGranthaByName(name)

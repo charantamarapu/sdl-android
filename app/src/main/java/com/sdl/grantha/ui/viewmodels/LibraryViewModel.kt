@@ -96,7 +96,7 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun syncCatalog() {
+    fun syncCatalog(silent: Boolean = false) {
         viewModelScope.launch {
             _uiState.update { it.copy(isSyncing = true, error = null, syncMessage = null) }
             val result = repository.syncCatalog()
@@ -104,12 +104,15 @@ class LibraryViewModel @Inject constructor(
                 onSuccess = { count ->
                     _uiState.update { it.copy(
                         isSyncing = false, 
-                        syncMessage = "Library synced: $count books found"
+                        syncMessage = if (silent) null else "Library synced: $count books found"
                     ) }
                     refreshCounts()
                 },
                 onFailure = { e ->
-                    _uiState.update { it.copy(isSyncing = false, error = e.message) }
+                    _uiState.update { it.copy(
+                        isSyncing = false, 
+                        error = if (silent) null else e.message
+                    ) }
                 }
             )
         }
