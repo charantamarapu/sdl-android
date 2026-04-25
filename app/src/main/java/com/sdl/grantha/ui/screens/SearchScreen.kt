@@ -34,7 +34,11 @@ fun SearchScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     
-    var isAnyFieldFocused by remember { mutableStateOf(false) }
+    var isTextFocused by remember { mutableStateOf(false) }
+    var isTagsFocused by remember { mutableStateOf(false) }
+    var isNegTagsFocused by remember { mutableStateOf(false) }
+    val isAnyFieldFocused = isTextFocused || isTagsFocused || isNegTagsFocused
+    
     var showTextSuggestions by remember { mutableStateOf(false) }
     
     // Ensure no focus on start
@@ -110,7 +114,7 @@ fun SearchScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .onFocusChanged { focusState ->
-                                    isAnyFieldFocused = focusState.isFocused
+                                    isTextFocused = focusState.isFocused
                                     if (focusState.isFocused && !uiState.isOptionsExpanded) {
                                         viewModel.toggleOptionsExpanded()
                                     }
@@ -271,7 +275,7 @@ fun SearchScreen(
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .onFocusChanged { isAnyFieldFocused = it.isFocused },
+                                    .onFocusChanged { isTagsFocused = it.isFocused },
                                 label = { Text("Include Tags") },
                                 placeholder = { Text("e.g., वेदान्तः, रामानुजः") },
                                 singleLine = true
@@ -314,7 +318,7 @@ fun SearchScreen(
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .onFocusChanged { isAnyFieldFocused = it.isFocused },
+                                    .onFocusChanged { isNegTagsFocused = it.isFocused },
                                 label = { Text("Exclude Tags") },
                                 placeholder = { Text("e.g., न्यायः") },
                                 singleLine = true,
