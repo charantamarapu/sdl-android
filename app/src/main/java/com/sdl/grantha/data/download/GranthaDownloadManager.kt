@@ -188,6 +188,9 @@ class GranthaDownloadManager(
 
     fun cancelDownloads() {
         _isCancelled = true
+        // Mark progress as complete/error so UI resets immediately
+        _bulkProgress.value = _bulkProgress.value?.copy(isComplete = true)
+        _downloadProgress.value = _downloadProgress.value?.copy(error = "Cancelled")
     }
 
     fun resetCancel() {

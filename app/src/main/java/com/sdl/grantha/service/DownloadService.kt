@@ -11,6 +11,7 @@ import com.sdl.grantha.R
 import com.sdl.grantha.data.repository.GranthaRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 /**
@@ -54,23 +55,27 @@ class DownloadService : Service() {
                 }
 
                 serviceScope.launch {
-                    var completed = 0
-                    var failed = 0
-
-                    for (name in names) {
-                        updateNotification("Downloading: $name", completed, names.size)
-                        val result = repository.downloadGrantha(name)
-                        if (result != null) {
-                            completed++
-                        } else {
-                            failed++
-                            // If download failed because of cancellation, stop the entire process
-                            if (repository.isCancelled()) {
-                                break
+                    // Update notification from progress flow
+                    val progressJob = launch {
+                        repository.getBulkProgress().collect { progress ->
+                            if (progress != null && !progress.isComplete) {
+                                updateNotification(
+                                    "Downloading: ${progress.currentGrantha} (${progress.currentIndex + 1}/${progress.totalCount})",
+                                    progress.currentIndex,
+                                    progress.totalCount
+                                )
                             }
                         }
                     }
 
+                    repository.downloadMultiple(names)
+                    progressJob.cancel()
+
+                    // Show final status
+                    val finalProgress = repository.getBulkProgress().first { it?.isComplete == true }
+                    val completed = (finalProgress?.totalCount ?: 0) - (finalProgress?.failedCount ?: 0)
+                    val failed = finalProgress?.failedCount ?: 0
+                    
                     val msg = if (failed == 0) "Downloaded $completed granthas"
                     else "Downloaded $completed, failed $failed"
                     updateNotification(msg, names.size, names.size)
@@ -92,6 +97,7 @@ class DownloadService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        repository.clearProgress()
         serviceScope.cancel()
         super.onDestroy()
     }
