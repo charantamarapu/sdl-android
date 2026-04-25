@@ -21,6 +21,8 @@ import com.sdl.grantha.ui.components.DownloadProgressBar
 import com.sdl.grantha.ui.components.GranthaCard
 import com.sdl.grantha.ui.theme.*
 import com.sdl.grantha.ui.viewmodels.LibraryViewModel
+import java.util.*
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -148,7 +150,7 @@ fun LibraryScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Search granthas by name or tag...") },
+                placeholder = { Text("Search by bookname or tag...") },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 trailingIcon = {
                     if (uiState.searchQuery.isNotBlank()) {
@@ -160,6 +162,46 @@ fun LibraryScreen(
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium
             )
+
+            // Sort Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Sort Menu
+                var showSortMenu by remember { mutableStateOf(false) }
+                Box(modifier = Modifier.weight(1f)) {
+                    FilterChip(
+                        selected = true,
+                        onClick = { showSortMenu = true },
+                        label = { Text("Sort: ${uiState.sortOption.name.lowercase().replaceFirstChar { it.uppercase() }}") },
+                        trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) }
+                    )
+                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                        LibraryViewModel.SortOption.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.name.lowercase().replace("_", " ").replaceFirstChar { it.uppercase() }) },
+                                onClick = {
+                                    viewModel.setSortOption(option)
+                                    showSortMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Ascending/Descending Toggle
+                IconButton(onClick = { viewModel.toggleSortDirection() }) {
+                    Icon(
+                        if (uiState.isAscending) Icons.Filled.South else Icons.Filled.North,
+                        contentDescription = if (uiState.isAscending) "Descending" else "Ascending",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
 
             // Selection mode toolbar
             AnimatedVisibility(visible = uiState.isSelectionMode) {

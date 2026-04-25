@@ -9,21 +9,27 @@ import com.sdl.grantha.data.local.GranthaEntity
 import com.sdl.grantha.data.repository.GranthaRepository
 import com.sdl.grantha.service.DownloadService
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val repository: GranthaRepository,
     application: Application
 ) : AndroidViewModel(application) {
 
+    enum class SortOption { NAME, SIZE, PAGES }
+
     // UI state
     data class UiState(
         val isLoading: Boolean = false,
         val isSyncing: Boolean = false,
         val error: String? = null,
+        val sortOption: SortOption = SortOption.NAME,
+        val isAscending: Boolean = true,
         val showDownloadedOnly: Boolean = false,
         val searchQuery: String = "",
         val selectedGranthas: Set<String> = emptySet(),
@@ -37,20 +43,40 @@ class LibraryViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
-    // Grantha list — reactive to filter changes
+    // Grantha list — reactive to search, sort and filter changes
     val granthas: StateFlow<List<GranthaEntity>> = combine(
+        _uiState.map { it.sortOption }.distinctUntilChanged(),
+        _uiState.map { it.isAscending }.distinctUntilChanged(),
         _uiState.map { it.showDownloadedOnly }.distinctUntilChanged(),
         _uiState.map { it.searchQuery }.distinctUntilChanged()
-    ) { downloadedOnly, query ->
-        Pair(downloadedOnly, query)
-    }.flatMapLatest { (downloadedOnly, query) ->
-        when {
-            query.isNotBlank() && downloadedOnly -> repository.searchDownloadedGranthas(query)
-            query.isNotBlank() -> repository.searchGranthas(query)
-            downloadedOnly -> repository.getDownloadedGranthas()
-            else -> repository.getAllGranthas()
+    ) { sort, asc, downloadedOnly, query ->
+        StateParams(sort, asc, downloadedOnly, query)
+    }.flatMapLatest { params ->
+        val baseFlow = if (params.query.isNotBlank()) {
+            repository.searchGranthas(params.query)
+        } else {
+            repository.getAllGranthas()
+        }
+
+        baseFlow.map { list ->
+            val filteredList = if (params.downloadedOnly) {
+                list.filter { it.isDownloaded }
+            } else {
+                list
+            }
+
+            // Apply sorting
+            when (params.sort) {
+                SortOption.NAME -> if (params.asc) filteredList.sortedBy { it.name } else filteredList.sortedByDescending { it.name }
+                SortOption.SIZE -> if (params.asc) filteredList.sortedBy { it.sizeBytes } else filteredList.sortedByDescending { it.sizeBytes }
+                SortOption.PAGES -> if (params.asc) filteredList.sortedBy { it.pageCount } else filteredList.sortedByDescending { it.pageCount }
+            }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private data class StateParams(val sort: SortOption, val asc: Boolean, val downloadedOnly: Boolean, val query: String)
+
+    private data class Quadruple<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
     // Download progress
     val downloadProgress = repository.getDownloadProgress()
@@ -81,6 +107,14 @@ class LibraryViewModel @Inject constructor(
 
     fun clearSyncMessage() {
         _uiState.update { it.copy(syncMessage = null) }
+    }
+
+    fun setSortOption(option: SortOption) {
+        _uiState.update { it.copy(sortOption = option) }
+    }
+
+    fun toggleSortDirection() {
+        _uiState.update { it.copy(isAscending = !it.isAscending) }
     }
 
     fun toggleDownloadedOnly() {
@@ -181,7 +215,14 @@ class LibraryViewModel @Inject constructor(
             val downloaded = repository.getDownloadedCount()
             val sizeBytes = repository.getDownloadedSizeBytes()
             val sizeMb = String.format("%.1f", sizeBytes / (1024.0 * 1024.0))
-            _uiState.update { it.copy(totalCount = total, downloadedCount = downloaded, downloadedSizeMb = sizeMb) }
+            
+            _uiState.update { 
+                it.copy(
+                    totalCount = total, 
+                    downloadedCount = downloaded, 
+                    downloadedSizeMb = sizeMb
+                ) 
+            }
         }
     }
 }

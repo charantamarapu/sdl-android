@@ -102,7 +102,7 @@ fun SearchScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { 
-                                Text(if (showAdvanced) "Search inside books..." else "Search Books...") 
+                                Text(if (showAdvanced) "Search inside books..." else "Search books...") 
                             },
                             // ... leadingIcon, trailingIcon, etc ...
                             leadingIcon = { 
