@@ -32,7 +32,9 @@ class ReaderViewModel @Inject constructor(
         val sourceUrl: String = "",
         val subBooks: List<SearchEngine.SubBookInfo> = emptyList(),
         val currentSubBook: String? = null,
-        val grantha: GranthaEntity? = null
+        val grantha: GranthaEntity? = null,
+        val fullText: String? = null,
+        val pageMap: List<Pair<Int, Int>>? = null
     )
 
     data class PageContent(
@@ -56,28 +58,56 @@ class ReaderViewModel @Inject constructor(
 
                 val subBooks = SearchEngine.parseSubBooks(grantha.booksRaw)
 
-                val text = if (grantha.isDownloaded) {
-                    withContext(Dispatchers.IO) { repository.getGranthaText(name) }
+                if (grantha.isDownloaded) {
+                    withContext(Dispatchers.IO) {
+                        val text = repository.getGranthaText(name)
+                        if (text != null) {
+                            // High-performance preparation (reuse scanner logic)
+                            val prepared = SearchEngine.prepareText(text)
+                            val currentSubBook = SearchEngine.getSubBookForPage(startPage, subBooks)
+                            
+                            // Extract only the current page text for display
+                            val pages = List(prepared.pageMap.size + 1) { index ->
+                                // Lazy-calculate page text when needed, but for now we'll 
+                                // just pass the indices or extract the current one.
+                                // To minimize memory, we extract only the current one.
+                                if (index + 1 == startPage) {
+                                    PageContent(index + 1, extractPageText(text, index + 1, prepared.pageMap))
+                                } else {
+                                    PageContent(index + 1, "") // Placeholder
+                                }
+                            }
+
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    pages = pages,
+                                    currentPage = startPage,
+                                    totalPages = pages.size,
+                                    identifier = grantha.identifier,
+                                    sourceUrl = grantha.sourceUrl,
+                                    subBooks = subBooks,
+                                    currentSubBook = currentSubBook,
+                                    grantha = grantha,
+                                    fullText = text, // Cache text for navigation
+                                    pageMap = prepared.pageMap
+                                )
+                            }
+                        } else {
+                            _uiState.update { it.copy(isLoading = false, error = "Could not read book text") }
+                        }
+                    }
                 } else {
-                    null
-                }
-
-                // Parse text into pages using {[(N)]} markers if available
-                val pages = text?.let { parsePages(it) } ?: emptyList()
-                val currentSubBook = SearchEngine.getSubBookForPage(startPage, subBooks)
-
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        pages = pages,
-                        currentPage = startPage,
-                        totalPages = pages.size,
-                        identifier = grantha.identifier,
-                        sourceUrl = grantha.sourceUrl,
-                        subBooks = subBooks,
-                        currentSubBook = currentSubBook,
-                        grantha = grantha
-                    )
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            currentPage = startPage,
+                            identifier = grantha.identifier,
+                            sourceUrl = grantha.sourceUrl,
+                            subBooks = subBooks,
+                            grantha = grantha
+                        )
+                    }
                 }
             } catch (e: Throwable) {
                 _uiState.update { it.copy(isLoading = false, error = e.message ?: "Unknown Error") }
@@ -85,12 +115,27 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    private var fullTextCache: String? = null
+    private var pageMapCache: List<Pair<Int, Int>>? = null
+
     fun goToPage(page: Int) {
         val state = _uiState.value
         val maxPage = if (state.grantha?.isDownloaded == true) state.totalPages else 2000
         val clampedPage = page.coerceIn(1, maxPage.coerceAtLeast(1))
+        
         val subBook = SearchEngine.getSubBookForPage(clampedPage, state.subBooks)
-        _uiState.update { it.copy(currentPage = clampedPage, currentSubBook = subBook) }
+        
+        // Update current page text lazily if downloaded
+        if (state.grantha?.isDownloaded == true && state.fullText != null && state.pageMap != null) {
+            val updatedPages = state.pages.map { 
+                if (it.pageNumber == clampedPage) {
+                    it.copy(text = extractPageText(state.fullText, clampedPage, state.pageMap))
+                } else it
+            }
+            _uiState.update { it.copy(currentPage = clampedPage, currentSubBook = subBook, pages = updatedPages) }
+        } else {
+            _uiState.update { it.copy(currentPage = clampedPage, currentSubBook = subBook) }
+        }
     }
 
     fun nextPage() {
@@ -158,28 +203,27 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    private fun parsePages(text: String): List<PageContent> {
-        val pagePattern = Regex("\\{\\[\\((\\d+)\\)\\]\\}")
-        val pages = mutableListOf<PageContent>()
-
-        val matches = pagePattern.findAll(text)
-        var lastStart = 0
-        var lastPageNum = 1
-
-        for (match in matches) {
-            val content = text.substring(lastStart, match.range.first).trim()
-            if (content.isNotEmpty() || pages.isNotEmpty()) {
-                pages.add(PageContent(lastPageNum, content))
-            }
-            lastStart = match.range.last + 1
-            lastPageNum = match.groupValues[1].toIntOrNull() ?: (lastPageNum + 1)
+    private fun extractPageText(text: String, pageNumber: Int, pageMap: List<Pair<Int, Int>>): String {
+        if (pageMap.isEmpty()) return text
+        
+        // Find index of current page marker
+        val markerIdx = pageMap.indexOfFirst { it.second == pageNumber }
+        if (markerIdx == -1) return ""
+        
+        val startPos = pageMap[markerIdx].first
+        val endPos = if (markerIdx + 1 < pageMap.size) {
+            // Find start of next page marker
+            // The marker text itself is {[(N)]} which we want to exclude
+            // The pageMap stores the position AFTER the marker.
+            // We need to find the start of the next marker.
+            val nextMarkerPageNum = pageMap[markerIdx + 1].second
+            val searchStr = "{[($nextMarkerPageNum)]}"
+            val nextStart = text.indexOf(searchStr, startPos)
+            if (nextStart != -1) nextStart else text.length
+        } else {
+            text.length
         }
-
-        // Add final page
-        if (lastStart < text.length) {
-            pages.add(PageContent(lastPageNum, text.substring(lastStart).trim()))
-        }
-
-        return if (pages.isEmpty()) listOf(PageContent(1, text)) else pages
+        
+        return text.substring(startPos, endPos).trim()
     }
 }

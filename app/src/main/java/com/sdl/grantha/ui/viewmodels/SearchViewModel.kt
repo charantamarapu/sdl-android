@@ -15,8 +15,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import javax.inject.Inject
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val repository: GranthaRepository,
@@ -32,14 +34,17 @@ class SearchViewModel @Inject constructor(
         val isSearching: Boolean = false,
         val searchProgress: Float = 0f,
         val currentBook: String = "",
-        val results: List<SearchResult> = emptyList(),
+        val results: List<SearchResult> = emptyList(), // Main results (one per book)
+        val selectedBookResults: String? = null, // Which book is currently "opened"
+        val bookSnippets: List<SearchResult> = emptyList(), // All snippets for selected book
         val error: String? = null,
         val hasSearched: Boolean = false,
         val availableTags: List<String> = emptyList(),
         val selectedTags: Set<String> = emptySet(),
         val customRules: Map<String, String> = emptyMap(),
         val customRulesText: String = "",
-        val maxPerBook: Int = 10,
+        val maxPerBook: Int = 20,
+        val isAdvancedMode: Boolean = false,
         val negativeTagsQuery: String = "",
         val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList(),
         val suggestions: List<Suggestion> = emptyList()
@@ -261,50 +266,51 @@ class SearchViewModel @Inject constructor(
                     val totalBooks = downloaded.size
                     var booksProcessed = 0
 
-                    // Search multiple books in parallel (concurrency limited by Dispatchers.Default)
-                    downloaded.chunked(4).flatMap { chunk ->
-                        chunk.map { grantha ->
-                            async {
-                                yield()
-                                val text = repository.getGranthaText(grantha.name)
-                                if (text == null) {
-                                    synchronized(this@SearchViewModel) {
-                                        booksProcessed++
-                                        val progress = booksProcessed.toFloat() / totalBooks
-                                        _uiState.update { it.copy(searchProgress = progress) }
-                                    }
-                                    return@async emptyList<SearchResult>()
-                                }
-
-                                val singleMap = mapOf(grantha.name to Triple(text, grantha.tags, grantha.booksRaw))
-
-                                val partialResults = SearchEngine.searchAll(
-                                    granthaTexts = singleMap,
-                                    textQueries = textQueries,
-                                    textLogic = state.textLogic,
-                                    fuzzyPct = state.fuzzyPct,
-                                    tagQueries = tagQueries,
-                                    tagsLogic = state.tagsLogic,
-                                    negativeTagQueries = negTagQueries,
-                                    customRules = state.customRules.ifEmpty { null },
-                                    maxPerBook = state.maxPerBook,
-                                    onProgress = null
-                                )
-
+                    // Search books in parallel with a concurrency limit of 4
+                    // This allows new books to start as soon as one finishes, maximizing CPU usage.
+                    downloaded.asFlow().flatMapMerge(concurrency = 4) { grantha ->
+                        flow {
+                            yield()
+                            val text = repository.getGranthaText(grantha.name)
+                            if (text == null) {
                                 synchronized(this@SearchViewModel) {
                                     booksProcessed++
                                     val progress = booksProcessed.toFloat() / totalBooks
-                                    _uiState.update { 
-                                        it.copy(
-                                            searchProgress = progress,
-                                            currentBook = "Searching: ${grantha.name}"
-                                        ) 
-                                    }
+                                    _uiState.update { it.copy(searchProgress = progress) }
                                 }
-                                partialResults
+                                emit(emptyList<SearchResult>())
+                                return@flow
                             }
-                        }.awaitAll().flatten()
-                    }
+
+                            val singleMap = mapOf(grantha.name to Triple(text, grantha.tags, grantha.booksRaw))
+
+                            val partialResults = SearchEngine.searchAll(
+                                granthaTexts = singleMap,
+                                textQueries = textQueries,
+                                textLogic = state.textLogic,
+                                fuzzyPct = state.fuzzyPct,
+                                tagQueries = tagQueries,
+                                tagsLogic = state.tagsLogic,
+                                negativeTagQueries = negTagQueries,
+                                customRules = state.customRules.ifEmpty { null },
+                                maxPerBook = state.maxPerBook,
+                                stopAtFirstMatch = true,
+                                onProgress = null
+                            )
+
+                            synchronized(this@SearchViewModel) {
+                                booksProcessed++
+                                val progress = booksProcessed.toFloat() / totalBooks
+                                _uiState.update { 
+                                    it.copy(
+                                        searchProgress = progress,
+                                        currentBook = "Searching: ${grantha.name}"
+                                    ) 
+                                }
+                            }
+                            emit(partialResults)
+                        }
+                    }.toList().flatten()
                 }
 
                 // Add highlighting to results
@@ -351,14 +357,64 @@ class SearchViewModel @Inject constructor(
         _uiState.update { 
             it.copy(
                 results = emptyList(), 
-                basicResults = emptyList(),
-                hasSearched = false 
+                basicResults = emptyList(), 
+                hasSearched = false, 
+                selectedBookResults = null,
+                bookSnippets = emptyList()
             ) 
         }
     }
 
+    fun selectBookForDeepSearch(bookName: String) {
+        val state = _uiState.value
+        val textQueries = state.textQuery.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        
+        if (textQueries.isEmpty()) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSearching = true, selectedBookResults = bookName, bookSnippets = emptyList()) }
+            
+            try {
+                withContext(Dispatchers.IO) {
+                    val grantha = repository.getGranthaByName(bookName)
+                    val text = repository.getGranthaText(bookName)
+                    
+                    if (grantha != null && text != null) {
+                        val subBooks = SearchEngine.parseSubBooks(grantha.booksRaw)
+                        val prepared = SearchEngine.prepareText(text)
+                        
+                        val allSnippets = mutableListOf<SearchResult>()
+                        for (q in textQueries) {
+                             val matches = if (state.fuzzyPct > 0) {
+                                 SearchEngine.fuzzySearchInternal(prepared, text, q, state.fuzzyPct, bookName, subBooks, state.customRules.ifEmpty { null }, state.maxPerBook)
+                             } else {
+                                 SearchEngine.smartSearchInternal(prepared, text, q, bookName, subBooks, state.customRules.ifEmpty { null }, state.maxPerBook)
+                             }
+                             allSnippets.addAll(matches)
+                        }
+                        
+                        val sorted = allSnippets.sortedBy { it.page }
+                        _uiState.update { it.copy(isSearching = false, bookSnippets = sorted) }
+                    } else {
+                        _uiState.update { it.copy(isSearching = false, error = "Book text not found") }
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isSearching = false, error = e.message) }
+            }
+        }
+    }
+
+    fun deselectBook() {
+        _uiState.update { it.copy(selectedBookResults = null, bookSnippets = emptyList()) }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(error = null) }
+    }
+
+    fun setAdvancedMode(isAdvanced: Boolean) {
+        _uiState.update { it.copy(isAdvancedMode = isAdvanced) }
     }
 
     fun downloadGrantha(name: String) {

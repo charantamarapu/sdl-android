@@ -8,7 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,7 +31,7 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showAdvanced by remember { mutableStateOf(false) }
+// Removed local showAdvanced for persistence
 
     Scaffold(
         // TopAppBar removed as per user request
@@ -56,26 +56,26 @@ fun SearchScreen(
                 ) {
                     // Search Mode Tabs
                     TabRow(
-                        selectedTabIndex = if (showAdvanced) 1 else 0,
+                        selectedTabIndex = if (uiState.isAdvancedMode) 1 else 0,
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.primary,
                         divider = {},
                         indicator = { tabPositions ->
                             TabRowDefaults.SecondaryIndicator(
-                                Modifier.tabIndicatorOffset(tabPositions[if (showAdvanced) 1 else 0]),
+                                Modifier.tabIndicatorOffset(tabPositions[if (uiState.isAdvancedMode) 1 else 0]),
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
                     ) {
                         Tab(
-                            selected = !showAdvanced,
-                            onClick = { showAdvanced = false },
-                            text = { Text("Basic Search", fontWeight = if (!showAdvanced) FontWeight.Bold else FontWeight.Normal) }
+                            selected = !uiState.isAdvancedMode,
+                            onClick = { viewModel.setAdvancedMode(false) },
+                            text = { Text("Basic Search", fontWeight = if (!uiState.isAdvancedMode) FontWeight.Bold else FontWeight.Normal) }
                         )
                         Tab(
-                            selected = showAdvanced,
-                            onClick = { showAdvanced = true },
-                            text = { Text("Advanced Search", fontWeight = if (showAdvanced) FontWeight.Bold else FontWeight.Normal) }
+                            selected = uiState.isAdvancedMode,
+                            onClick = { viewModel.setAdvancedMode(true) },
+                            text = { Text("Advanced Search", fontWeight = if (uiState.isAdvancedMode) FontWeight.Bold else FontWeight.Normal) }
                         )
                     }
 
@@ -93,7 +93,7 @@ fun SearchScreen(
                             value = uiState.textQuery,
                             onValueChange = { 
                                 viewModel.setTextQuery(it)
-                                if (!showAdvanced) {
+                                if (!uiState.isAdvancedMode) {
                                     viewModel.updateSuggestions(it, "text")
                                     showTextSuggestions = it.length >= 2
                                 } else {
@@ -102,7 +102,7 @@ fun SearchScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { 
-                                Text(if (showAdvanced) "Search inside books..." else "Search books...") 
+                                Text(if (uiState.isAdvancedMode) "Search inside books..." else "Search books...") 
                             },
                             // ... leadingIcon, trailingIcon, etc ...
                             leadingIcon = { 
@@ -134,7 +134,7 @@ fun SearchScreen(
                     }
 
                     // Suggestions List (Inline instead of Popup to avoid keyboard overlap)
-                    if (showTextSuggestions && uiState.suggestions.isNotEmpty() && !showAdvanced) {
+                    if (showTextSuggestions && uiState.suggestions.isNotEmpty() && !uiState.isAdvancedMode) {
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -172,7 +172,7 @@ fun SearchScreen(
                     Button(
                         onClick = { 
                             if (uiState.isSearching) viewModel.stopSearch() 
-                            else viewModel.search(showAdvanced) 
+                            else viewModel.search(uiState.isAdvancedMode) 
                         },
                         enabled = uiState.isSearching || (uiState.textQuery.isNotBlank() || uiState.tagsQuery.isNotBlank()),
                         modifier = Modifier
@@ -203,7 +203,7 @@ fun SearchScreen(
                             Icon(Icons.Filled.Search, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                if (showAdvanced) "Search Inside Books" else "Search for Books",
+                                if (uiState.isAdvancedMode) "Search Inside Books" else "Search for Books",
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -213,7 +213,7 @@ fun SearchScreen(
 
             // Advanced options panel (shown as a scrollable section below header if in Advanced mode)
             AnimatedVisibility(
-                visible = showAdvanced,
+                visible = uiState.isAdvancedMode,
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
@@ -405,7 +405,7 @@ fun SearchScreen(
             }
 
             // Search progress
-            if (uiState.isSearching && showAdvanced) {
+            if (uiState.isSearching && uiState.isAdvancedMode) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -447,7 +447,7 @@ fun SearchScreen(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                 ) {
-                    val count = if (showAdvanced) uiState.results.size else uiState.basicResults.size
+                    val count = if (uiState.isAdvancedMode) uiState.results.size else uiState.basicResults.size
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -456,7 +456,7 @@ fun SearchScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "$count ${if (showAdvanced) "matches" else "books"} found",
+                            "$count ${if (uiState.isAdvancedMode) "matches" else "books"} found",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Medium
                         )
@@ -472,16 +472,56 @@ fun SearchScreen(
             }
 
             // Results List
-            if (showAdvanced) {
-                if (uiState.results.isNotEmpty()) {
+            if (uiState.isAdvancedMode) {
+                if (uiState.selectedBookResults != null) {
+                    // Show all snippets for the selected book
+                    item {
+                        ListItem(
+                            headlineContent = { Text(uiState.selectedBookResults!!, fontWeight = FontWeight.Bold) },
+                            leadingContent = { 
+                                IconButton(onClick = { viewModel.deselectBook() }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to books")
+                                }
+                            },
+                            trailingContent = { 
+                                Text(
+                                    "${uiState.bookSnippets.size} results",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                ) 
+                            },
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f))
+                        )
+                        HorizontalDivider(thickness = 0.5.dp)
+                    }
+                    
+                    if (uiState.bookSnippets.isNotEmpty()) {
+                        items(
+                            items = uiState.bookSnippets,
+                            key = { "snippet_${it.granthaName}_${it.page}_${it.contextText.hashCode()}" }
+                        ) { result ->
+                            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                                SearchResultCard(
+                                    result = result,
+                                    onClick = { onNavigateToReader(result.granthaName, result.page) }
+                                )
+                            }
+                        }
+                    } else if (!uiState.isSearching) {
+                        item {
+                            NoResultsView("No matches found inside this book")
+                        }
+                    }
+                } else if (uiState.results.isNotEmpty()) {
+                    // Show the list of books found (each result here is the first match in a book)
                     items(
                         items = uiState.results,
-                        key = { "${it.granthaName}_${it.page}_${it.contextText.hashCode()}" }
+                        key = { "book_${it.granthaName}" }
                     ) { result ->
                         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                             SearchResultCard(
                                 result = result,
-                                onClick = { onNavigateToReader(result.granthaName, result.page) }
+                                onClick = { viewModel.selectBookForDeepSearch(result.granthaName) }
                             )
                         }
                     }
