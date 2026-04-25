@@ -7,9 +7,14 @@ import com.sdl.grantha.domain.search.SearchEngine
 import com.sdl.grantha.domain.search.SearchResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.yield
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import javax.inject.Inject
 
 @HiltViewModel
@@ -49,6 +54,8 @@ class SearchViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+    private var searchJob: Job? = null
 
     private var allGranthas: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList()
 
@@ -175,7 +182,8 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun executeBasicSearch(query: String) {
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true, error = null, basicResults = emptyList(), hasSearched = false) }
             try {
                 // Search across the FULL catalog (downloaded or not)
@@ -196,8 +204,15 @@ class SearchViewModel @Inject constructor(
                         results = emptyList() // Clear OCR results if any
                     ) 
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Ignore cancellation
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(isSearching = false, error = e.message ?: "Basic search failed") }
+            } finally {
+                if (searchJob?.isCancelled == true) {
+                    _uiState.update { it.copy(isSearching = false) }
+                }
             }
         }
     }
@@ -211,7 +226,8 @@ class SearchViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             _uiState.update { 
                 it.copy(
                     isSearching = true, 
@@ -242,50 +258,66 @@ class SearchViewModel @Inject constructor(
                         .map { it.trim().lowercase() }
                         .filter { it.isNotBlank() }
 
-                    val allResults = mutableListOf<SearchResult>()
+                    val totalBooks = downloaded.size
+                    var booksProcessed = 0
 
-                    for ((index, grantha) in downloaded.withIndex()) {
-                        _uiState.update {
-                            it.copy(
-                                searchProgress = index.toFloat() / downloaded.size,
-                                currentBook = "Searching: ${grantha.name}"
-                            )
-                        }
+                    // Search multiple books in parallel (concurrency limited by Dispatchers.Default)
+                    downloaded.chunked(4).flatMap { chunk ->
+                        chunk.map { grantha ->
+                            async {
+                                yield()
+                                val text = repository.getGranthaText(grantha.name)
+                                if (text == null) {
+                                    synchronized(this@SearchViewModel) {
+                                        booksProcessed++
+                                        val progress = booksProcessed.toFloat() / totalBooks
+                                        _uiState.update { it.copy(searchProgress = progress) }
+                                    }
+                                    return@async emptyList<SearchResult>()
+                                }
 
-                        val text = repository.getGranthaText(grantha.name)
-                        if (text == null) continue
+                                val singleMap = mapOf(grantha.name to Triple(text, grantha.tags, grantha.booksRaw))
 
-                        val singleMap = mapOf(grantha.name to Triple(text, grantha.tags, grantha.booksRaw))
+                                val partialResults = SearchEngine.searchAll(
+                                    granthaTexts = singleMap,
+                                    textQueries = textQueries,
+                                    textLogic = state.textLogic,
+                                    fuzzyPct = state.fuzzyPct,
+                                    tagQueries = tagQueries,
+                                    tagsLogic = state.tagsLogic,
+                                    negativeTagQueries = negTagQueries,
+                                    customRules = state.customRules.ifEmpty { null },
+                                    maxPerBook = state.maxPerBook,
+                                    onProgress = null
+                                )
 
-                        val partialResults = SearchEngine.searchAll(
-                            granthaTexts = singleMap,
-                            textQueries = textQueries,
-                            textLogic = state.textLogic,
-                            fuzzyPct = state.fuzzyPct,
-                            tagQueries = tagQueries,
-                            tagsLogic = state.tagsLogic,
-                            negativeTagQueries = negTagQueries,
-                            customRules = state.customRules.ifEmpty { null },
-                            maxPerBook = state.maxPerBook,
-                            onProgress = null // Progress is handled by the outer loop now
-                        )
-                        allResults.addAll(partialResults)
-                        
-                        // Memory management: hint GC
-                        if (index % 5 == 0) System.gc() 
+                                synchronized(this@SearchViewModel) {
+                                    booksProcessed++
+                                    val progress = booksProcessed.toFloat() / totalBooks
+                                    _uiState.update { 
+                                        it.copy(
+                                            searchProgress = progress,
+                                            currentBook = "Searching: ${grantha.name}"
+                                        ) 
+                                    }
+                                }
+                                partialResults
+                            }
+                        }.awaitAll().flatten()
                     }
-                    allResults
                 }
 
                 // Add highlighting to results
-                val highlightedResults = results.map { result ->
-                    val highlighted = SearchEngine.highlightText(
-                        result.contextText,
-                        textQueries,
-                        state.fuzzyPct,
-                        state.customRules.ifEmpty { null }
-                    )
-                    result.copy(highlightedText = highlighted)
+                val highlightedResults = withContext(Dispatchers.Default) {
+                    results.map { result ->
+                        val highlighted = SearchEngine.highlightText(
+                            result.contextText,
+                            textQueries,
+                            state.fuzzyPct,
+                            state.customRules.ifEmpty { null }
+                        )
+                        result.copy(highlightedText = highlighted)
+                    }
                 }
 
                 _uiState.update {
@@ -296,12 +328,23 @@ class SearchViewModel @Inject constructor(
                         searchProgress = 1f
                     )
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Ignore
+                throw e
             } catch (e: Throwable) {
                 _uiState.update {
                     it.copy(isSearching = false, error = e.message ?: "Search failed: Error")
                 }
+            } finally {
+                _uiState.update { it.copy(isSearching = false) }
             }
         }
+    }
+
+    fun stopSearch() {
+        searchJob?.cancel()
+        searchJob = null
+        _uiState.update { it.copy(isSearching = false, currentBook = "Search stopped") }
     }
 
     fun clearResults() {

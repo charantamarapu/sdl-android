@@ -170,23 +170,35 @@ fun SearchScreen(
 
                     // Search Button (Full width, premium look)
                     Button(
-                        onClick = { viewModel.search(showAdvanced) },
-                        enabled = !uiState.isSearching && (uiState.textQuery.isNotBlank() || uiState.tagsQuery.isNotBlank()),
+                        onClick = { 
+                            if (uiState.isSearching) viewModel.stopSearch() 
+                            else viewModel.search(showAdvanced) 
+                        },
+                        enabled = uiState.isSearching || (uiState.textQuery.isNotBlank() || uiState.tagsQuery.isNotBlank()),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
                             .height(50.dp),
                         shape = MaterialTheme.shapes.medium,
+                        colors = if (uiState.isSearching) 
+                            ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        else 
+                            ButtonDefaults.buttonColors(),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                     ) {
                         if (uiState.isSearching) {
+                            Icon(Icons.Filled.Stop, contentDescription = "Stop Search")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Stop Search", fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.width(12.dp))
                             CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(16.dp),
+                                color = MaterialTheme.colorScheme.onErrorContainer,
                                 strokeWidth = 2.dp
                             )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("Searching...")
                         } else {
                             Icon(Icons.Filled.Search, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
@@ -394,10 +406,25 @@ fun SearchScreen(
 
             // Search progress
             if (uiState.isSearching && showAdvanced) {
-                DownloadProgressBar(
-                    progress = uiState.searchProgress,
-                    label = "Searching: ${uiState.currentBook}"
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        DownloadProgressBar(
+                            progress = uiState.searchProgress,
+                            label = "Searching: ${uiState.currentBook}"
+                        )
+                    }
+                    IconButton(
+                        onClick = { viewModel.stopSearch() },
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Icon(Icons.Filled.Stop, contentDescription = "Stop")
+                    }
+                }
             }
 
             // Error

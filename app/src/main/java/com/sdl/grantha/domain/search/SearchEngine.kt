@@ -201,67 +201,70 @@ object SearchEngine {
         val pageMap = getPageMap(textContent)
 
         // Build clean text (no page markers, no spaces/hyphens) with index mapping
-        val pageMarkerRegex = Regex("\\{\\[\\(\\d+\\)\\]\\}")
-        val cleanChars = StringBuilder()
-        val cleanToOrigIndex = mutableListOf<Int>()
+        // Pre-allocate to avoid re-allocations
+        val cleanChars = StringBuilder(textContent.length)
+        val cleanToOrigIndex = IntArray(textContent.length)
+        var cleanCount = 0
 
+        val pageMarkerRegex = Regex("\\{\\[\\(\\d+\\)\\]\\}")
         var lastEnd = 0
+        
+        // Manual character processing is faster than multiple regex replaces
         for (match in pageMarkerRegex.findAll(textContent)) {
             // Process chunk before marker
-            val chunk = textContent.substring(lastEnd, match.range.first)
-            for (i in chunk.indices) {
-                val ch = chunk[i]
+            for (idx in lastEnd until match.range.first) {
+                val ch = textContent[idx]
                 if (ch != ' ' && ch != '-' && ch != '\t' && ch != '\n' && ch != '\r') {
                     cleanChars.append(ch.lowercaseChar())
-                    cleanToOrigIndex.add(lastEnd + i)
+                    cleanToOrigIndex[cleanCount++] = idx
                 }
             }
             lastEnd = match.range.last + 1
         }
         // Last chunk
-        val lastChunk = textContent.substring(lastEnd)
-        for (i in lastChunk.indices) {
-            val ch = lastChunk[i]
+        for (idx in lastEnd until textContent.length) {
+            val ch = textContent[idx]
             if (ch != ' ' && ch != '-' && ch != '\t' && ch != '\n' && ch != '\r') {
                 cleanChars.append(ch.lowercaseChar())
-                cleanToOrigIndex.add(lastEnd + i)
+                cleanToOrigIndex[cleanCount++] = idx
             }
         }
 
-        val cleanText = cleanChars.toString()
+        val cleanText = cleanChars // StringBuilder is a CharSequence
         val results = mutableListOf<SearchResult>()
-        val seenRegions = mutableSetOf<Pair<Int, Int>>()
+        val seenRegions = mutableSetOf<Long>() // Use Long for more efficient keying (pageNum << 32 | block)
 
         val windowMin = max(1, baseQueryLen - maxErrors)
         val windowMax = baseQueryLen + maxErrors
 
         for (winSize in windowMin..windowMax) {
-            for (i in 0..(cleanText.length - winSize)) {
-                val window = cleanText.substring(i, i + winSize)
-
+            val limit = cleanCount - winSize
+            if (limit < 0) continue
+            
+            for (i in 0..limit) {
                 // Test against all variants
                 var minDist = Int.MAX_VALUE
                 for (qClean in queryVariantsClean) {
-                    if (kotlin.math.abs(window.length - qClean.length) > maxErrors) continue
-                    val dist = SanskritUtils.levenshteinDistance(qClean, window, maxErrors)
+                    if (kotlin.math.abs(winSize - qClean.length) > maxErrors) continue
+                    
+                    // Call optimized Levenshtein without substring
+                    val dist = SanskritUtils.levenshteinDistance(qClean, cleanText, i, i + winSize, maxErrors)
                     if (dist < minDist) minDist = dist
                 }
 
                 if (minDist <= maxErrors) {
                     // Map back to original text position
-                    val origIdx = if (i < cleanToOrigIndex.size) cleanToOrigIndex[i]
-                    else textContent.length - 1
+                    val origIdx = cleanToOrigIndex[i]
                     val pageNum = getPageForIndex(origIdx, pageMap)
 
-                    // Deduplicate by region
-                    val regionKey = Pair(pageNum, origIdx / 200)
+                    // Deduplicate by region (block of 200 chars)
+                    val regionKey = (pageNum.toLong() shl 32) or (origIdx / 200).toLong()
                     if (regionKey in seenRegions) continue
                     seenRegions.add(regionKey)
 
                     // Extract context from original text
                     val contextStart = max(0, origIdx - 100)
-                    val origEnd = if (i + winSize - 1 < cleanToOrigIndex.size)
-                        cleanToOrigIndex[i + winSize - 1] else textContent.length
+                    val origEnd = cleanToOrigIndex[i + winSize - 1]
                     val contextEnd = min(textContent.length, origEnd + 100)
                     val rawContext = textContent.substring(contextStart, contextEnd)
 
