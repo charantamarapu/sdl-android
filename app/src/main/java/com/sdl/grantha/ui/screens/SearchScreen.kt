@@ -14,9 +14,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sdl.grantha.ui.components.DownloadProgressBar
+import com.sdl.grantha.ui.components.GranthaCard
 import com.sdl.grantha.ui.components.SearchResultCard
 import com.sdl.grantha.ui.viewmodels.SearchViewModel
 
@@ -30,75 +32,129 @@ fun SearchScreen(
     var showAdvanced by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "Search ग्रन्थs",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        }
+        // TopAppBar removed as per user request
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(bottom = padding.calculateBottomPadding())
+                .statusBarsPadding()
         ) {
-            // Search input
-            OutlinedTextField(
-                value = uiState.textQuery,
-                onValueChange = { viewModel.setTextQuery(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Enter Sanskrit text to search...") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    Row {
-                        if (uiState.textQuery.isNotBlank()) {
-                            IconButton(onClick = { viewModel.setTextQuery("") }) {
-                                Icon(Icons.Filled.Clear, contentDescription = "Clear")
-                            }
+            // Premium Search Header (Web-like)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 2.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                ) {
+                    // Search Mode Tabs
+                    TabRow(
+                        selectedTabIndex = if (showAdvanced) 1 else 0,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        divider = {},
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                Modifier.tabIndicatorOffset(tabPositions[if (showAdvanced) 1 else 0]),
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
-                        // Search button
-                        IconButton(
-                            onClick = { viewModel.search() },
-                            enabled = !uiState.isSearching
-                        ) {
-                            Icon(
-                                Icons.Filled.PlayArrow,
-                                contentDescription = "Search",
-                                tint = MaterialTheme.colorScheme.primary
+                    ) {
+                        Tab(
+                            selected = !showAdvanced,
+                            onClick = { showAdvanced = false },
+                            text = { Text("Basic Search", fontWeight = if (!showAdvanced) FontWeight.Bold else FontWeight.Normal) }
+                        )
+                        Tab(
+                            selected = showAdvanced,
+                            onClick = { showAdvanced = true },
+                            text = { Text("Advanced Search", fontWeight = if (showAdvanced) FontWeight.Bold else FontWeight.Normal) }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Styled Search Input
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = uiState.textQuery,
+                            onValueChange = { viewModel.setTextQuery(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { 
+                                Text(if (showAdvanced) "Search inside books..." else "Search Books...") 
+                            },
+                            leadingIcon = { 
+                                Icon(
+                                    Icons.Filled.Search, 
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                ) 
+                            },
+                            trailingIcon = {
+                                if (uiState.textQuery.isNotBlank()) {
+                                    IconButton(onClick = { viewModel.setTextQuery("") }) {
+                                        Icon(Icons.Filled.Close, contentDescription = "Clear")
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = MaterialTheme.shapes.large,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Search Button (Full width, premium look)
+                    Button(
+                        onClick = { viewModel.search(showAdvanced) },
+                        enabled = !uiState.isSearching && uiState.textQuery.isNotBlank(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .height(50.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                    ) {
+                        if (uiState.isSearching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Searching...")
+                        } else {
+                            Icon(Icons.Filled.Search, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                if (showAdvanced) "Search Inside Books" else "Search for Books",
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
-                },
-                singleLine = true,
-                shape = MaterialTheme.shapes.medium
-            )
-
-            // Advanced options toggle
-            TextButton(
-                onClick = { showAdvanced = !showAdvanced },
-                modifier = Modifier.padding(horizontal = 16.dp)
-            ) {
-                Icon(
-                    if (showAdvanced) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Advanced Options")
+                }
             }
 
-            // Advanced options panel
-            AnimatedVisibility(visible = showAdvanced) {
+            // Advanced options panel (shown as a scrollable section below header if in Advanced mode)
+            AnimatedVisibility(
+                visible = showAdvanced,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -112,14 +168,30 @@ fun SearchScreen(
                             .fillMaxWidth()
                             .padding(12.dp)
                     ) {
-                        // Tag filter
+                        // Tag filter (Include)
                         OutlinedTextField(
                             value = uiState.tagsQuery,
                             onValueChange = { viewModel.setTagsQuery(it) },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Filter by tags") },
+                            label = { Text("Include Tags") },
                             placeholder = { Text("e.g., वेदान्तः, रामानुजः") },
                             singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Tag filter (Exclude)
+                        OutlinedTextField(
+                            value = uiState.negativeTagsQuery,
+                            onValueChange = { viewModel.setNegativeTagsQuery(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Exclude Tags") },
+                            placeholder = { Text("e.g., न्यायः") },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.error,
+                                focusedLabelColor = MaterialTheme.colorScheme.error
+                            )
                         )
 
                         Spacer(modifier = Modifier.height(8.dp))
@@ -213,7 +285,7 @@ fun SearchScreen(
             }
 
             // Search progress
-            if (uiState.isSearching) {
+            if (uiState.isSearching && showAdvanced) {
                 DownloadProgressBar(
                     progress = uiState.searchProgress,
                     label = "Searching: ${uiState.currentBook}"
@@ -234,13 +306,13 @@ fun SearchScreen(
                 }
             }
 
-            // Results
+            // Results header
             if (uiState.hasSearched && !uiState.isSearching) {
-                // Results header
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                 ) {
+                    val count = if (showAdvanced) uiState.results.size else uiState.basicResults.size
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -249,7 +321,7 @@ fun SearchScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "${uiState.results.size} results found",
+                            "$count ${if (showAdvanced) "matches" else "books"} found",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Medium
                         )
@@ -261,68 +333,77 @@ fun SearchScreen(
             }
 
             // Results list
-            if (uiState.results.isNotEmpty()) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(
-                        items = uiState.results,
-                        key = { "${it.granthaName}_${it.page}_${it.contextText.hashCode()}" }
-                    ) { result ->
-                        SearchResultCard(
-                            result = result,
-                            onClick = { onNavigateToReader(result.granthaName, result.page) }
-                        )
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (showAdvanced) {
+                    // ADVANCED RESULTS (Snippets)
+                    if (uiState.results.isNotEmpty()) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(
+                                items = uiState.results,
+                                key = { "${it.granthaName}_${it.page}_${it.contextText.hashCode()}" }
+                            ) { result ->
+                                SearchResultCard(
+                                    result = result,
+                                    onClick = { onNavigateToReader(result.granthaName, result.page) }
+                                )
+                            }
+                        }
+                    } else if (uiState.hasSearched && !uiState.isSearching) {
+                        NoResultsView("No matches found inside books")
                     }
-                }
-            } else if (uiState.hasSearched && !uiState.isSearching) {
-                // No results
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Filled.SearchOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            "No results found",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            "Try different search terms or download more granthas",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else if (!uiState.isSearching && !uiState.hasSearched) {
-                // Initial state
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("🔍", style = MaterialTheme.typography.displayLarge)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            "Search downloaded granthas",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            "All searching happens locally on your device",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                } else {
+                    // BASIC RESULTS (Book Cards)
+                    if (uiState.basicResults.isNotEmpty()) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(
+                                items = uiState.basicResults,
+                                key = { it.name }
+                            ) { grantha ->
+                                GranthaCard(
+                                    grantha = grantha,
+                                    onClick = { onNavigateToReader(grantha.name, 1) },
+                                    onDownloadClick = { viewModel.downloadGrantha(grantha.name) },
+                                    onDeleteClick = { viewModel.deleteGrantha(grantha.name) }
+                                )
+                            }
+                        }
+                    } else if (uiState.hasSearched && !uiState.isSearching) {
+                        NoResultsView("No books found matching your query")
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NoResultsView(message: String) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Filled.SearchOff,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(message, style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Try different search terms",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

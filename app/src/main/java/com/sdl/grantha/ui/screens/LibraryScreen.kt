@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -47,48 +49,63 @@ fun LibraryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding(),
+                tonalElevation = 2.dp,
+                shadowElevation = 2.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "SDL",
-                            style = MaterialTheme.typography.titleLarge,
+                            "Sanskrit Digital Library",
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "${uiState.downloadedCount}/${uiState.totalCount} downloaded • ${uiState.downloadedSizeMb} MB",
+                            "${uiState.downloadedCount}/${uiState.totalCount} books • ${uiState.downloadedSizeMb} MB",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                },
-                actions = {
-                    // Toggle downloaded only
-                    IconButton(onClick = { viewModel.toggleDownloadedOnly() }) {
-                        Icon(
-                            if (uiState.showDownloadedOnly) Icons.Filled.FilterAlt
-                            else Icons.Outlined.FilterAlt,
-                            contentDescription = "Filter downloaded",
-                            tint = if (uiState.showDownloadedOnly) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // Sync catalog
-                    IconButton(onClick = { viewModel.syncCatalog() }) {
-                        if (uiState.isSyncing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
+                    
+                    Row {
+                        // Toggle downloaded only
+                        IconButton(onClick = { viewModel.toggleDownloadedOnly() }) {
+                            Icon(
+                                if (uiState.showDownloadedOnly) Icons.Filled.FilterAlt
+                                else Icons.Outlined.FilterAlt,
+                                contentDescription = "Filter downloaded",
+                                tint = if (uiState.showDownloadedOnly) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
                             )
-                        } else {
-                            Icon(Icons.Filled.Sync, contentDescription = "Sync catalog")
+                        }
+                        // Sync catalog
+                        IconButton(onClick = { viewModel.syncCatalog() }) {
+                            if (uiState.isSyncing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Filled.Sync, 
+                                    contentDescription = "Sync catalog",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
+                }
+            }
         },
         floatingActionButton = {
             val isDownloading = (bulkProgress != null && !bulkProgress!!.isComplete) ||
@@ -243,7 +260,7 @@ fun LibraryScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
-                            Icons.Outlined.LibraryBooks,
+                            Icons.AutoMirrored.Outlined.LibraryBooks,
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant

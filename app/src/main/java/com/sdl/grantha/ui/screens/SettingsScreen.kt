@@ -11,31 +11,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.sdl.grantha.BuildConfig
+import com.sdl.grantha.ui.viewmodels.LibraryViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(
+    viewModel: LibraryViewModel = hiltViewModel()
+) {
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "Settings",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        }
+        // TopAppBar removed as per user request
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(bottom = padding.calculateBottomPadding())
+                .statusBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -49,7 +41,7 @@ fun SettingsScreen() {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "Server",
+                        "Server URL",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
@@ -67,6 +59,69 @@ fun SettingsScreen() {
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
+                }
+            }
+
+            // Storage Management
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                var showDialog by remember { mutableStateOf(false) }
+                
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "Storage",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Button(
+                        onClick = { showDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.DeleteSweep, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Delete All Downloaded Books")
+                    }
+                    
+                    Text(
+                        "This will free up space by removing all downloaded files from your device. Metadata and search index will remain.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                if (showDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showDialog = false },
+                        title = { Text("Delete All Downloads?") },
+                        text = { Text("Are you sure you want to remove all downloaded granthas from your device? You will need to download them again for offline access.") },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    viewModel.deleteAllDownloads()
+                                    showDialog = false
+                                },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("Delete All")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
                 }
             }
 

@@ -160,6 +160,13 @@ class LibraryViewModel @Inject constructor(
         context.startService(intent)
     }
 
+    fun deleteAllDownloads() {
+        viewModelScope.launch {
+            repository.deleteAllDownloads()
+            refreshCounts()
+        }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }

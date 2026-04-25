@@ -14,7 +14,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    private val repository: GranthaRepository
+    private val repository: GranthaRepository,
+    private val application: android.app.Application
 ) : ViewModel() {
 
     data class UiState(
@@ -34,7 +35,8 @@ class SearchViewModel @Inject constructor(
         val customRules: Map<String, String> = emptyMap(),
         val customRulesText: String = "",
         val maxPerBook: Int = 10,
-        val negativeTagsQuery: String = ""
+        val negativeTagsQuery: String = "",
+        val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList()
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -105,14 +107,55 @@ class SearchViewModel @Inject constructor(
     /**
      * Execute search across all downloaded granthas.
      */
-    fun search() {
+    fun search(isAdvanced: Boolean) {
         val state = _uiState.value
-        val textQueries = state.textQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        val query = state.textQuery.trim()
 
-        if (textQueries.isEmpty() && state.tagsQuery.isBlank()) {
+        if (query.isBlank() && state.tagsQuery.isBlank()) {
             _uiState.update { it.copy(error = "Please enter a search query") }
             return
         }
+
+        if (!isAdvanced) {
+            // BASIC SEARCH: Search book metadata (title, tags)
+            executeBasicSearch(query)
+        } else {
+            // ADVANCED SEARCH: Search inside books (OCR)
+            executeAdvancedSearch()
+        }
+    }
+
+    private fun executeBasicSearch(query: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSearching = true, error = null, basicResults = emptyList(), hasSearched = false) }
+            try {
+                // Search across the FULL catalog (downloaded or not)
+                val allGranthas = repository.getAllGranthas().first()
+                val q = query.lowercase()
+                
+                val results = allGranthas.filter { grantha ->
+                    grantha.name.lowercase().contains(q) || 
+                    grantha.tags.lowercase().contains(q) ||
+                    grantha.booksRaw.lowercase().contains(q)
+                }
+                
+                _uiState.update { 
+                    it.copy(
+                        isSearching = false, 
+                        basicResults = results, 
+                        hasSearched = true,
+                        results = emptyList() // Clear OCR results if any
+                    ) 
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isSearching = false, error = e.message ?: "Basic search failed") }
+            }
+        }
+    }
+
+    private fun executeAdvancedSearch() {
+        val state = _uiState.value
+        val textQueries = state.textQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
 
         if (textQueries.any { it.length < 2 }) {
             _uiState.update { it.copy(error = "Each search term must be at least 2 characters") }
@@ -120,7 +163,15 @@ class SearchViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isSearching = true, error = null, results = emptyList(), searchProgress = 0f) }
+            _uiState.update { 
+                it.copy(
+                    isSearching = true, 
+                    error = null, 
+                    results = emptyList(), 
+                    basicResults = emptyList(), // Clear book results if any
+                    searchProgress = 0f 
+                ) 
+            }
 
             try {
                 val results = withContext(Dispatchers.Default) {
@@ -200,6 +251,26 @@ class SearchViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.update { it.copy(error = null) }
+    }
+
+    fun downloadGrantha(name: String) {
+        viewModelScope.launch {
+            val intent = android.content.Intent(application, com.sdl.grantha.service.DownloadService::class.java).apply {
+                action = com.sdl.grantha.service.DownloadService.ACTION_DOWNLOAD
+                putStringArrayListExtra(com.sdl.grantha.service.DownloadService.EXTRA_GRANTHA_NAMES, arrayListOf(name))
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                application.startForegroundService(intent)
+            } else {
+                application.startService(intent)
+            }
+        }
+    }
+
+    fun deleteGrantha(name: String) {
+        viewModelScope.launch {
+            repository.deleteGrantha(name)
+        }
     }
 
     private fun loadAvailableTags() {
