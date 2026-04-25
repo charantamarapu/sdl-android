@@ -105,14 +105,12 @@ class SearchViewModel @Inject constructor(
     fun selectSuggestion(suggestion: Suggestion, target: String) {
         _uiState.update { state ->
             when (target) {
-                "text" -> state.copy(textQuery = suggestion.value, suggestions = emptyList(), isOptionsExpanded = false)
-                "tags" -> state.copy(tagsQuery = suggestion.value, suggestions = emptyList(), isOptionsExpanded = false)
-                "negative" -> state.copy(negativeTagsQuery = suggestion.value, suggestions = emptyList(), isOptionsExpanded = false)
+                "text" -> state.copy(textQuery = suggestion.value, suggestions = emptyList())
+                "tags" -> state.copy(tagsQuery = suggestion.value, suggestions = emptyList())
+                "negative" -> state.copy(negativeTagsQuery = suggestion.value, suggestions = emptyList())
                 else -> state
             }
         }
-        // Automatically trigger search after selecting a suggestion
-        search(isAdvanced = _uiState.value.isAdvancedMode)
     }
 
     fun setTextQuery(query: String) {

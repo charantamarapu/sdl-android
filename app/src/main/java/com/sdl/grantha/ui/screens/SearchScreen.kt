@@ -184,7 +184,6 @@ fun SearchScreen(
                                             )
                                         },
                                         modifier = Modifier.clickable {
-                                            focusManager.clearFocus()
                                             viewModel.selectSuggestion(suggestion, "text")
                                             showTextSuggestions = false
                                         }
