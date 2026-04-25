@@ -104,12 +104,8 @@ fun SearchScreen(
                             value = uiState.textQuery,
                             onValueChange = { 
                                 viewModel.setTextQuery(it)
-                                if (!uiState.isAdvancedMode) {
-                                    viewModel.updateSuggestions(it, "text")
-                                    showTextSuggestions = it.length >= 2
-                                } else {
-                                    showTextSuggestions = false
-                                }
+                                viewModel.updateSuggestions(it, "text")
+                                showTextSuggestions = it.length >= 2
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -161,7 +157,7 @@ fun SearchScreen(
                     }
 
                     // Suggestions List (Inline instead of Popup to avoid keyboard overlap)
-                    if (showTextSuggestions && uiState.suggestions.isNotEmpty() && !uiState.isAdvancedMode) {
+                    if (showTextSuggestions && uiState.suggestions.isNotEmpty()) {
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -289,9 +285,17 @@ fun SearchScreen(
                                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                                 ) {
                                     Column {
-                                        uiState.suggestions.filter { it.type == SearchViewModel.SuggestionType.TAG }.forEach { suggestion ->
+                                        uiState.suggestions.forEach { suggestion ->
                                             ListItem(
                                                 headlineContent = { Text(suggestion.value, style = MaterialTheme.typography.bodySmall) },
+                                                leadingContent = {
+                                                    Icon(
+                                                        if (suggestion.type == SearchViewModel.SuggestionType.BOOK) Icons.Filled.Book else Icons.AutoMirrored.Filled.Label,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(14.dp),
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
+                                                },
                                                 modifier = Modifier.clickable {
                                                     viewModel.selectSuggestion(suggestion, "tags")
                                                     showTagSuggestions = false
@@ -336,9 +340,17 @@ fun SearchScreen(
                                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                                 ) {
                                     Column {
-                                        uiState.suggestions.filter { it.type == SearchViewModel.SuggestionType.TAG }.forEach { suggestion ->
+                                        uiState.suggestions.forEach { suggestion ->
                                             ListItem(
                                                 headlineContent = { Text(suggestion.value, style = MaterialTheme.typography.bodySmall) },
+                                                leadingContent = {
+                                                    Icon(
+                                                        if (suggestion.type == SearchViewModel.SuggestionType.BOOK) Icons.Filled.Book else Icons.AutoMirrored.Filled.Label,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(14.dp),
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
+                                                },
                                                 modifier = Modifier.clickable {
                                                     viewModel.selectSuggestion(suggestion, "negative")
                                                     showNegativeSuggestions = false
