@@ -294,7 +294,7 @@ fun LibraryScreen(
                             onClick = {
                                 if (uiState.isSelectionMode) {
                                     viewModel.toggleSelection(grantha.name)
-                                } else if (grantha.isDownloaded) {
+                                } else {
                                     onNavigateToReader(grantha.name, 1)
                                 }
                             },

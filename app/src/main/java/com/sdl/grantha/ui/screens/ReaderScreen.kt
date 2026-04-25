@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.TextSnippet
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -76,7 +77,7 @@ fun ReaderScreen(
                     if (uiState.grantha?.isDownloaded == true) {
                         IconButton(onClick = { showPageImage = !showPageImage }) {
                             Icon(
-                                if (showPageImage) Icons.Filled.TextSnippet else Icons.Filled.Image,
+                                if (showPageImage) Icons.AutoMirrored.Filled.TextSnippet else Icons.Filled.Image,
                                 contentDescription = if (showPageImage) "Show text" else "Show page image"
                             )
                         }
@@ -92,8 +93,8 @@ fun ReaderScreen(
             )
         },
         bottomBar = {
-            // Page navigation bar
-            if (!uiState.isLoading && uiState.pages.isNotEmpty()) {
+            // Page navigation bar (only in text mode)
+            if (!uiState.isLoading && !showPageImage) {
                 BottomAppBar(
                     containerColor = MaterialTheme.colorScheme.surface,
                     tonalElevation = 4.dp
@@ -105,6 +106,8 @@ fun ReaderScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val maxPage = if (uiState.grantha?.isDownloaded == true) uiState.totalPages else 2000
+
                         IconButton(
                             onClick = { viewModel.previousPage() },
                             enabled = uiState.currentPage > 1
@@ -113,14 +116,17 @@ fun ReaderScreen(
                         }
 
                         Text(
-                            "Page ${uiState.currentPage} / ${uiState.totalPages}",
+                            if (uiState.grantha?.isDownloaded == true) 
+                                "Page ${uiState.currentPage} / ${uiState.totalPages}"
+                            else
+                                "Page ${uiState.currentPage}",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Medium
                         )
 
                         IconButton(
                             onClick = { viewModel.nextPage() },
-                            enabled = uiState.currentPage < uiState.totalPages
+                            enabled = uiState.currentPage < maxPage
                         ) {
                             Icon(Icons.Filled.ChevronRight, contentDescription = "Next page")
                         }
@@ -224,7 +230,14 @@ fun ReaderScreen(
                 OutlinedTextField(
                     value = goToPageText,
                     onValueChange = { goToPageText = it.filter { ch -> ch.isDigit() } },
-                    label = { Text("Page number (1-${uiState.totalPages})") },
+                    label = { 
+                        Text(
+                            if (uiState.grantha?.isDownloaded == true) 
+                                "Page number (1-${uiState.totalPages})" 
+                            else 
+                                "Page number"
+                        ) 
+                    },
                     singleLine = true
                 )
             },
