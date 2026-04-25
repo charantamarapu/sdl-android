@@ -211,9 +211,32 @@ fun SearchScreen(
                 }
             }
 
-            // Advanced options panel (shown as a scrollable section below header if in Advanced mode)
+            // Header for Advanced Options with Expand/Collapse toggle
+            if (uiState.isAdvancedMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.toggleOptionsExpanded() }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Advanced Options",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Icon(
+                        if (uiState.isOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (uiState.isOptionsExpanded) "Collapse" else "Expand",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            // Advanced options panel
             AnimatedVisibility(
-                visible = uiState.isAdvancedMode,
+                visible = uiState.isAdvancedMode && uiState.isOptionsExpanded,
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
@@ -316,23 +339,7 @@ fun SearchScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Tag chips from downloaded granthas
-                        if (uiState.availableTags.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                for (tag in uiState.availableTags.take(20)) {
-                                    FilterChip(
-                                        selected = tag in uiState.selectedTags,
-                                        onClick = { viewModel.toggleTag(tag) },
-                                        label = { Text(tag, style = MaterialTheme.typography.labelSmall) }
-                                    )
-                                }
-                            }
-                        }
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         Spacer(modifier = Modifier.height(8.dp))
 

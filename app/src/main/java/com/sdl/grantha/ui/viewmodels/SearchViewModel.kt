@@ -37,6 +37,7 @@ class SearchViewModel @Inject constructor(
         val results: List<SearchResult> = emptyList(), // Main results (one per book)
         val selectedBookResults: String? = null, // Which book is currently "opened"
         val bookSnippets: List<SearchResult> = emptyList(), // All snippets for selected book
+        val cachedBookSnippets: Map<String, List<SearchResult>> = emptyMap(), // Cache for book results
         val error: String? = null,
         val hasSearched: Boolean = false,
         val availableTags: List<String> = emptyList(),
@@ -45,6 +46,7 @@ class SearchViewModel @Inject constructor(
         val customRulesText: String = "",
         val maxPerBook: Int = 20,
         val isAdvancedMode: Boolean = false,
+        val isOptionsExpanded: Boolean = true,
         val negativeTagsQuery: String = "",
         val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList(),
         val suggestions: List<Suggestion> = emptyList()
@@ -189,7 +191,17 @@ class SearchViewModel @Inject constructor(
     private fun executeBasicSearch(query: String) {
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
-            _uiState.update { it.copy(isSearching = true, error = null, basicResults = emptyList(), hasSearched = false) }
+            _uiState.update { 
+                it.copy(
+                    isSearching = true, 
+                    error = null, 
+                    basicResults = emptyList(), 
+                    hasSearched = false,
+                    cachedBookSnippets = emptyMap(),
+                    selectedBookResults = null,
+                    bookSnippets = emptyList()
+                ) 
+            }
             try {
                 // Search across the FULL catalog (downloaded or not)
                 val allGranthas = repository.getAllGranthas().first()
@@ -238,8 +250,12 @@ class SearchViewModel @Inject constructor(
                     isSearching = true, 
                     error = null, 
                     results = emptyList(), 
-                    basicResults = emptyList(), // Clear book results if any
-                    searchProgress = 0f 
+                    basicResults = emptyList(),
+                    searchProgress = 0f,
+                    cachedBookSnippets = emptyMap(),
+                    selectedBookResults = null,
+                    bookSnippets = emptyList(),
+                    hasSearched = false
                 ) 
             }
 
@@ -331,7 +347,8 @@ class SearchViewModel @Inject constructor(
                         isSearching = false,
                         results = highlightedResults,
                         hasSearched = true,
-                        searchProgress = 1f
+                        searchProgress = 1f,
+                        isOptionsExpanded = false
                     )
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -360,13 +377,24 @@ class SearchViewModel @Inject constructor(
                 basicResults = emptyList(), 
                 hasSearched = false, 
                 selectedBookResults = null,
-                bookSnippets = emptyList()
+                bookSnippets = emptyList(),
+                cachedBookSnippets = emptyMap() // Clear cache
             ) 
         }
     }
 
     fun selectBookForDeepSearch(bookName: String) {
         val state = _uiState.value
+        
+        // Return cached results if available
+        if (state.cachedBookSnippets.containsKey(bookName)) {
+            _uiState.update { it.copy(
+                selectedBookResults = bookName,
+                bookSnippets = it.cachedBookSnippets[bookName] ?: emptyList()
+            ) }
+            return
+        }
+
         val textQueries = state.textQuery.split(",").map { it.trim() }.filter { it.isNotEmpty() }
         
         if (textQueries.isEmpty()) return
@@ -394,7 +422,13 @@ class SearchViewModel @Inject constructor(
                         }
                         
                         val sorted = allSnippets.sortedBy { it.page }
-                        _uiState.update { it.copy(isSearching = false, bookSnippets = sorted) }
+                        _uiState.update { 
+                            it.copy(
+                                isSearching = false, 
+                                bookSnippets = sorted,
+                                cachedBookSnippets = it.cachedBookSnippets + (bookName to sorted) // Update cache
+                            ) 
+                        }
                     } else {
                         _uiState.update { it.copy(isSearching = false, error = "Book text not found") }
                     }
@@ -414,7 +448,17 @@ class SearchViewModel @Inject constructor(
     }
 
     fun setAdvancedMode(isAdvanced: Boolean) {
-        _uiState.update { it.copy(isAdvancedMode = isAdvanced) }
+        _uiState.update { 
+            it.copy(
+                isAdvancedMode = isAdvanced,
+                // If switching to advanced and no results, expand options
+                isOptionsExpanded = if (isAdvanced && it.results.isEmpty()) true else it.isOptionsExpanded
+            ) 
+        }
+    }
+
+    fun toggleOptionsExpanded() {
+        _uiState.update { it.copy(isOptionsExpanded = !it.isOptionsExpanded) }
     }
 
     fun downloadGrantha(name: String) {
