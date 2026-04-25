@@ -70,17 +70,32 @@ class SdlCryptoManager {
      * Returns the full OCR text with page markers {[(N)]}.
      */
     fun decryptText(sdlFile: File): String {
-        val data = sdlFile.readBytes()
-        validateMagic(data)
+        return java.io.FileInputStream(sdlFile).use { fis ->
+            val magic = ByteArray(4)
+            fis.read(magic)
+            if (String(magic, 0, 3, Charsets.US_ASCII) != MAGIC || magic[3] != MAGIC_VERSION) {
+                throw IllegalArgumentException("Invalid SDL file magic")
+            }
 
-        val iv = data.copyOfRange(4, 4 + IV_LENGTH)
-        val metaLen = ByteBuffer.wrap(data, 4 + IV_LENGTH, 4).int
+            val iv = ByteArray(IV_LENGTH)
+            fis.read(iv)
 
-        val textStart = HEADER_SIZE + metaLen
-        val encryptedText = data.copyOfRange(textStart, data.size)
-        val decryptedText = decryptBlock(iv, encryptedText, "sdl-text".toByteArray())
+            val metaLenBytes = ByteArray(4)
+            fis.read(metaLenBytes)
+            val metaLen = ByteBuffer.wrap(metaLenBytes).int
 
-        return String(decryptedText, Charsets.UTF_8)
+            // Skip metadata
+            fis.skip(metaLen.toLong())
+
+            // Decrypt text in one go (GCM requires the full ciphertext for the tag check at the end)
+            // But we can at least avoid readBytes() overhead
+            val remaining = (sdlFile.length() - fis.channel.position()).toInt()
+            val ciphertext = ByteArray(remaining)
+            fis.read(ciphertext)
+            
+            val decryptedText = decryptBlock(iv, ciphertext, "sdl-text".toByteArray())
+            String(decryptedText, Charsets.UTF_8)
+        }
     }
 
     /**

@@ -18,8 +18,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
-    private val repository: GranthaRepository,
-    savedStateHandle: SavedStateHandle
+    private val repository: GranthaRepository
 ) : ViewModel() {
 
     data class UiState(
@@ -57,24 +56,21 @@ class ReaderViewModel @Inject constructor(
 
                 val subBooks = SearchEngine.parseSubBooks(grantha.booksRaw)
 
-                val text = withContext(Dispatchers.IO) {
-                    repository.getGranthaText(name)
+                val text = if (grantha.isDownloaded) {
+                    withContext(Dispatchers.IO) { repository.getGranthaText(name) }
+                } else {
+                    null
                 }
 
-                if (text == null) {
-                    _uiState.update { it.copy(isLoading = false, error = "Could not load text. Grantha may not be downloaded.") }
-                    return@launch
-                }
-
-                // Parse text into pages using {[(N)]} markers
-                val pages = parsePages(text)
+                // Parse text into pages using {[(N)]} markers if available
+                val pages = text?.let { parsePages(it) } ?: emptyList()
                 val currentSubBook = SearchEngine.getSubBookForPage(startPage, subBooks)
 
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         pages = pages,
-                        currentPage = startPage.coerceIn(1, pages.size.coerceAtLeast(1)),
+                        currentPage = startPage,
                         totalPages = pages.size,
                         identifier = grantha.identifier,
                         sourceUrl = grantha.sourceUrl,
@@ -91,14 +87,16 @@ class ReaderViewModel @Inject constructor(
 
     fun goToPage(page: Int) {
         val state = _uiState.value
-        val clampedPage = page.coerceIn(1, state.totalPages.coerceAtLeast(1))
+        val maxPage = if (state.grantha?.isDownloaded == true) state.totalPages else 2000
+        val clampedPage = page.coerceIn(1, maxPage.coerceAtLeast(1))
         val subBook = SearchEngine.getSubBookForPage(clampedPage, state.subBooks)
         _uiState.update { it.copy(currentPage = clampedPage, currentSubBook = subBook) }
     }
 
     fun nextPage() {
         val state = _uiState.value
-        if (state.currentPage < state.totalPages) {
+        val maxPage = if (state.grantha?.isDownloaded == true) state.totalPages else 2000
+        if (state.currentPage < maxPage) {
             goToPage(state.currentPage + 1)
         }
     }
@@ -156,7 +154,7 @@ class ReaderViewModel @Inject constructor(
         return buildString {
             append("https://archive.org/embed/$identifier")
             if (filename.isNotBlank()) append("/$filename")
-            append("?ui=embed#page/n${page}/mode/1up")
+            append("?ui=embed#page/n${page - 1}/mode/1up")
         }
     }
 
@@ -164,27 +162,24 @@ class ReaderViewModel @Inject constructor(
         val pagePattern = Regex("\\{\\[\\((\\d+)\\)\\]\\}")
         val pages = mutableListOf<PageContent>()
 
-        val markers = pagePattern.findAll(text).toList()
-        if (markers.isEmpty()) {
-            // No page markers — treat entire text as one page
-            pages.add(PageContent(1, text))
-            return pages
-        }
+        val matches = pagePattern.findAll(text)
+        var lastStart = 0
+        var lastPageNum = 1
 
-        for (i in markers.indices) {
-            val pageNum = markers[i].groupValues[1].toIntOrNull() ?: continue
-            val startIdx = markers[i].range.last + 1
-            val endIdx = if (i + 1 < markers.size) markers[i + 1].range.first else text.length
-
-            val pageText = text.substring(startIdx, endIdx)
-                .replace(pagePattern, "")
-                .trim()
-
-            if (pageText.isNotBlank()) {
-                pages.add(PageContent(pageNum, pageText))
+        for (match in matches) {
+            val content = text.substring(lastStart, match.range.first).trim()
+            if (content.isNotEmpty() || pages.isNotEmpty()) {
+                pages.add(PageContent(lastPageNum, content))
             }
+            lastStart = match.range.last + 1
+            lastPageNum = match.groupValues[1].toIntOrNull() ?: (lastPageNum + 1)
         }
 
-        return pages
+        // Add final page
+        if (lastStart < text.length) {
+            pages.add(PageContent(lastPageNum, text.substring(lastStart).trim()))
+        }
+
+        return if (pages.isEmpty()) listOf(PageContent(1, text)) else pages
     }
 }

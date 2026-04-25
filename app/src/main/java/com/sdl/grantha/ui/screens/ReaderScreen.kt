@@ -38,6 +38,13 @@ fun ReaderScreen(
         viewModel.loadGrantha(granthaName, startPage)
     }
 
+    // Default to Archive view for non-downloaded books
+    LaunchedEffect(uiState.grantha) {
+        if (uiState.grantha != null && !uiState.grantha!!.isDownloaded) {
+            showPageImage = true
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -65,12 +72,14 @@ fun ReaderScreen(
                     }
                 },
                 actions = {
-                    // Toggle page image view
-                    IconButton(onClick = { showPageImage = !showPageImage }) {
-                        Icon(
-                            if (showPageImage) Icons.Filled.TextSnippet else Icons.Filled.Image,
-                            contentDescription = if (showPageImage) "Show text" else "Show page image"
-                        )
+                    // Toggle page image view (only if downloaded OCR text is available)
+                    if (uiState.grantha?.isDownloaded == true) {
+                        IconButton(onClick = { showPageImage = !showPageImage }) {
+                            Icon(
+                                if (showPageImage) Icons.Filled.TextSnippet else Icons.Filled.Image,
+                                contentDescription = if (showPageImage) "Show text" else "Show page image"
+                            )
+                        }
                     }
                     // Go to page
                     IconButton(onClick = { showGoToDialog = true }) {

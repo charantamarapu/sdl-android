@@ -36,14 +36,63 @@ class SearchViewModel @Inject constructor(
         val customRulesText: String = "",
         val maxPerBook: Int = 10,
         val negativeTagsQuery: String = "",
-        val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList()
+        val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList(),
+        val suggestions: List<Suggestion> = emptyList()
     )
+
+    data class Suggestion(
+        val value: String,
+        val type: SuggestionType
+    )
+
+    enum class SuggestionType { BOOK, TAG }
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    private var allGranthas: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList()
+
     init {
         loadAvailableTags()
+        viewModelScope.launch {
+            repository.getAllGranthas().collect { allGranthas = it }
+        }
+    }
+
+    fun updateSuggestions(query: String, target: String) {
+        if (query.length < 2) {
+            _uiState.update { it.copy(suggestions = emptyList()) }
+            return
+        }
+
+        val q = query.lowercase()
+        val suggestions = mutableListOf<Suggestion>()
+
+        // Add book suggestions if target is text
+        if (target == "text") {
+            val bookSuggestions = allGranthas
+                .filter { it.name.lowercase().contains(q) }
+                .map { Suggestion(it.name, SuggestionType.BOOK) }
+            suggestions.addAll(bookSuggestions)
+        }
+
+        // Add tag suggestions for all targets
+        val tagSuggestions = allGranthas
+            .flatMap { it.tags.split(",").map { t -> t.trim() } }
+            .filter { it.isNotBlank() && it.lowercase().contains(q) }
+            .distinct()
+            .map { Suggestion(it, SuggestionType.TAG) }
+        suggestions.addAll(tagSuggestions)
+
+        _uiState.update { it.copy(suggestions = suggestions.take(10)) }
+    }
+
+    fun selectSuggestion(suggestion: Suggestion, target: String) {
+        when (target) {
+            "text" -> _uiState.update { it.copy(textQuery = suggestion.value, suggestions = emptyList()) }
+            "tags" -> _uiState.update { it.copy(tagsQuery = suggestion.value, suggestions = emptyList()) }
+            "negative" -> _uiState.update { it.copy(negativeTagsQuery = suggestion.value, suggestions = emptyList()) }
+        }
     }
 
     fun setTextQuery(query: String) {
@@ -178,6 +227,13 @@ class SearchViewModel @Inject constructor(
                     val downloadedFlow = repository.getDownloadedGranthas()
                     val downloaded = downloadedFlow.first()
 
+                    if (downloaded.isEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            _uiState.update { it.copy(isSearching = false, error = "Advanced search only works on downloaded books. Please download some books first.") }
+                        }
+                        return@withContext emptyList<SearchResult>()
+                    }
+
                     val tagQueries = state.tagsQuery.split(",")
                         .map { it.trim().lowercase() }
                         .filter { it.isNotBlank() }
@@ -214,6 +270,9 @@ class SearchViewModel @Inject constructor(
                             onProgress = null // Progress is handled by the outer loop now
                         )
                         allResults.addAll(partialResults)
+                        
+                        // Memory management: hint GC
+                        if (index % 5 == 0) System.gc() 
                     }
                     allResults
                 }
@@ -246,7 +305,13 @@ class SearchViewModel @Inject constructor(
     }
 
     fun clearResults() {
-        _uiState.update { it.copy(results = emptyList(), hasSearched = false) }
+        _uiState.update { 
+            it.copy(
+                results = emptyList(), 
+                basicResults = emptyList(),
+                hasSearched = false 
+            ) 
+        }
     }
 
     fun clearError() {

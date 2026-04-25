@@ -171,7 +171,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     val features = listOf(
-                        "📚 Browse & download 340+ Sanskrit granthas",
+                        "📚 Browse & download Sanskrit granthas",
                         "🔍 Search text offline with exact & fuzzy matching",
                         "📖 Read granthas with page images from Archive.org",
                         "🔒 Encrypted storage for downloaded texts",

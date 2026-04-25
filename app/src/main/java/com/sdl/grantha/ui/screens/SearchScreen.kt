@@ -1,12 +1,14 @@
 package com.sdl.grantha.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,12 +36,13 @@ fun SearchScreen(
     Scaffold(
         // TopAppBar removed as per user request
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = padding.calculateBottomPadding())
-                .statusBarsPadding()
         ) {
+            item {
+                Column(modifier = Modifier.statusBarsPadding()) {
             // Premium Search Header (Web-like)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -79,6 +82,8 @@ fun SearchScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Styled Search Input
+                    var showTextSuggestions by remember { mutableStateOf(false) }
+                    
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -86,11 +91,20 @@ fun SearchScreen(
                     ) {
                         OutlinedTextField(
                             value = uiState.textQuery,
-                            onValueChange = { viewModel.setTextQuery(it) },
+                            onValueChange = { 
+                                viewModel.setTextQuery(it)
+                                if (!showAdvanced) {
+                                    viewModel.updateSuggestions(it, "text")
+                                    showTextSuggestions = it.length >= 2
+                                } else {
+                                    showTextSuggestions = false
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { 
                                 Text(if (showAdvanced) "Search inside books..." else "Search Books...") 
                             },
+                            // ... leadingIcon, trailingIcon, etc ...
                             leadingIcon = { 
                                 Icon(
                                     Icons.Filled.Search, 
@@ -100,7 +114,10 @@ fun SearchScreen(
                             },
                             trailingIcon = {
                                 if (uiState.textQuery.isNotBlank()) {
-                                    IconButton(onClick = { viewModel.setTextQuery("") }) {
+                                    IconButton(onClick = { 
+                                        viewModel.setTextQuery("")
+                                        showTextSuggestions = false
+                                    }) {
                                         Icon(Icons.Filled.Close, contentDescription = "Clear")
                                     }
                                 }
@@ -116,12 +133,45 @@ fun SearchScreen(
                         )
                     }
 
+                    // Suggestions List (Inline instead of Popup to avoid keyboard overlap)
+                    if (showTextSuggestions && uiState.suggestions.isNotEmpty() && !showAdvanced) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            tonalElevation = 1.dp,
+                            shape = MaterialTheme.shapes.medium,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Column {
+                                uiState.suggestions.forEach { suggestion ->
+                                    ListItem(
+                                        headlineContent = { Text(suggestion.value) },
+                                        leadingContent = {
+                                            Icon(
+                                                if (suggestion.type == SearchViewModel.SuggestionType.BOOK) Icons.Filled.Book else Icons.AutoMirrored.Filled.Label,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        },
+                                        modifier = Modifier.clickable {
+                                            viewModel.selectSuggestion(suggestion, "text")
+                                            showTextSuggestions = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Search Button (Full width, premium look)
                     Button(
                         onClick = { viewModel.search(showAdvanced) },
-                        enabled = !uiState.isSearching && uiState.textQuery.isNotBlank(),
+                        enabled = !uiState.isSearching && (uiState.textQuery.isNotBlank() || uiState.tagsQuery.isNotBlank()),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
@@ -169,30 +219,88 @@ fun SearchScreen(
                             .padding(12.dp)
                     ) {
                         // Tag filter (Include)
-                        OutlinedTextField(
-                            value = uiState.tagsQuery,
-                            onValueChange = { viewModel.setTagsQuery(it) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Include Tags") },
-                            placeholder = { Text("e.g., वेदान्तः, रामानुजः") },
-                            singleLine = true
-                        )
+                        var showTagSuggestions by remember { mutableStateOf(false) }
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = uiState.tagsQuery,
+                                onValueChange = { 
+                                    viewModel.setTagsQuery(it) 
+                                    viewModel.updateSuggestions(it, "tags")
+                                    showTagSuggestions = it.length >= 2
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Include Tags") },
+                                placeholder = { Text("e.g., वेदान्तः, रामानुजः") },
+                                singleLine = true
+                            )
+                            
+                            if (showTagSuggestions && uiState.suggestions.isNotEmpty()) {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    tonalElevation = 1.dp,
+                                    shape = MaterialTheme.shapes.small,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                ) {
+                                    Column {
+                                        uiState.suggestions.filter { it.type == SearchViewModel.SuggestionType.TAG }.forEach { suggestion ->
+                                            ListItem(
+                                                headlineContent = { Text(suggestion.value, style = MaterialTheme.typography.bodySmall) },
+                                                modifier = Modifier.clickable {
+                                                    viewModel.selectSuggestion(suggestion, "tags")
+                                                    showTagSuggestions = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
                         // Tag filter (Exclude)
-                        OutlinedTextField(
-                            value = uiState.negativeTagsQuery,
-                            onValueChange = { viewModel.setNegativeTagsQuery(it) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Exclude Tags") },
-                            placeholder = { Text("e.g., न्यायः") },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.error,
-                                focusedLabelColor = MaterialTheme.colorScheme.error
+                        var showNegativeSuggestions by remember { mutableStateOf(false) }
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = uiState.negativeTagsQuery,
+                                onValueChange = { 
+                                    viewModel.setNegativeTagsQuery(it) 
+                                    viewModel.updateSuggestions(it, "negative")
+                                    showNegativeSuggestions = it.length >= 2
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Exclude Tags") },
+                                placeholder = { Text("e.g., न्यायः") },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.error,
+                                    focusedLabelColor = MaterialTheme.colorScheme.error
+                                )
                             )
-                        )
+
+                            if (showNegativeSuggestions && uiState.suggestions.isNotEmpty()) {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    tonalElevation = 1.dp,
+                                    shape = MaterialTheme.shapes.small,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                ) {
+                                    Column {
+                                        uiState.suggestions.filter { it.type == SearchViewModel.SuggestionType.TAG }.forEach { suggestion ->
+                                            ListItem(
+                                                headlineContent = { Text(suggestion.value, style = MaterialTheme.typography.bodySmall) },
+                                                modifier = Modifier.clickable {
+                                                    viewModel.selectSuggestion(suggestion, "negative")
+                                                    showNegativeSuggestions = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -333,49 +441,45 @@ fun SearchScreen(
             }
 
             // Results list
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (showAdvanced) {
-                    // ADVANCED RESULTS (Snippets)
-                    if (uiState.results.isNotEmpty()) {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(
-                                items = uiState.results,
-                                key = { "${it.granthaName}_${it.page}_${it.contextText.hashCode()}" }
-                            ) { result ->
-                                SearchResultCard(
-                                    result = result,
-                                    onClick = { onNavigateToReader(result.granthaName, result.page) }
-                                )
-                            }
+                }
+            }
+
+            // Results List
+            if (showAdvanced) {
+                if (uiState.results.isNotEmpty()) {
+                    items(
+                        items = uiState.results,
+                        key = { "${it.granthaName}_${it.page}_${it.contextText.hashCode()}" }
+                    ) { result ->
+                        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            SearchResultCard(
+                                result = result,
+                                onClick = { onNavigateToReader(result.granthaName, result.page) }
+                            )
                         }
-                    } else if (uiState.hasSearched && !uiState.isSearching) {
+                    }
+                } else if (uiState.hasSearched && !uiState.isSearching) {
+                    item {
                         NoResultsView("No matches found inside books")
                     }
-                } else {
-                    // BASIC RESULTS (Book Cards)
-                    if (uiState.basicResults.isNotEmpty()) {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(
-                                items = uiState.basicResults,
-                                key = { it.name }
-                            ) { grantha ->
-                                GranthaCard(
-                                    grantha = grantha,
-                                    onClick = { onNavigateToReader(grantha.name, 1) },
-                                    onDownloadClick = { viewModel.downloadGrantha(grantha.name) },
-                                    onDeleteClick = { viewModel.deleteGrantha(grantha.name) }
-                                )
-                            }
+                }
+            } else {
+                if (uiState.basicResults.isNotEmpty()) {
+                    items(
+                        items = uiState.basicResults,
+                        key = { it.name }
+                    ) { grantha ->
+                        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                            GranthaCard(
+                                grantha = grantha,
+                                onClick = { onNavigateToReader(grantha.name, 1) },
+                                onDownloadClick = { viewModel.downloadGrantha(grantha.name) },
+                                onDeleteClick = { viewModel.deleteGrantha(grantha.name) }
+                            )
                         }
-                    } else if (uiState.hasSearched && !uiState.isSearching) {
+                    }
+                } else if (uiState.hasSearched && !uiState.isSearching) {
+                    item {
                         NoResultsView("No books found matching your query")
                     }
                 }
