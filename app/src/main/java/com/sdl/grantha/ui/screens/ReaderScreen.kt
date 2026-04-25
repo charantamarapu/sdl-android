@@ -1,0 +1,241 @@
+package com.sdl.grantha.ui.screens
+
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sdl.grantha.ui.viewmodels.ReaderViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReaderScreen(
+    granthaName: String,
+    startPage: Int = 1,
+    onBack: () -> Unit = {},
+    viewModel: ReaderViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showPageImage by remember { mutableStateOf(false) }
+    var goToPageText by remember { mutableStateOf("") }
+    var showGoToDialog by remember { mutableStateOf(false) }
+
+    // Load grantha on first composition
+    LaunchedEffect(granthaName, startPage) {
+        viewModel.loadGrantha(granthaName, startPage)
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            uiState.granthaName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (uiState.currentSubBook != null) {
+                            Text(
+                                "📖 ${uiState.currentSubBook}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    // Toggle page image view
+                    IconButton(onClick = { showPageImage = !showPageImage }) {
+                        Icon(
+                            if (showPageImage) Icons.Filled.TextSnippet else Icons.Filled.Image,
+                            contentDescription = if (showPageImage) "Show text" else "Show page image"
+                        )
+                    }
+                    // Go to page
+                    IconButton(onClick = { showGoToDialog = true }) {
+                        Icon(Icons.Filled.Pin, contentDescription = "Go to page")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
+        bottomBar = {
+            // Page navigation bar
+            if (!uiState.isLoading && uiState.pages.isNotEmpty()) {
+                BottomAppBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { viewModel.previousPage() },
+                            enabled = uiState.currentPage > 1
+                        ) {
+                            Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous page")
+                        }
+
+                        Text(
+                            "Page ${uiState.currentPage} / ${uiState.totalPages}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        IconButton(
+                            onClick = { viewModel.nextPage() },
+                            enabled = uiState.currentPage < uiState.totalPages
+                        ) {
+                            Icon(Icons.Filled.ChevronRight, contentDescription = "Next page")
+                        }
+                    }
+                }
+            }
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            when {
+                uiState.isLoading -> {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                }
+                uiState.error != null -> {
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Filled.Error,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            uiState.error ?: "Unknown error",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+                showPageImage -> {
+                    // Archive.org page image via WebView
+                    val readerUrl = viewModel.getArchiveReaderUrl(uiState.currentPage)
+                    if (readerUrl.isNotBlank()) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { context ->
+                                WebView(context).apply {
+                                    webViewClient = WebViewClient()
+                                    settings.javaScriptEnabled = true
+                                    settings.loadWithOverviewMode = true
+                                    settings.useWideViewPort = true
+                                    settings.builtInZoomControls = true
+                                    settings.displayZoomControls = false
+                                    loadUrl(readerUrl)
+                                }
+                            },
+                            update = { webView ->
+                                webView.loadUrl(readerUrl)
+                            }
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Page image not available (no archive.org identifier)")
+                        }
+                    }
+                }
+                else -> {
+                    // Text content
+                    val currentPageContent = uiState.pages.find { it.pageNumber == uiState.currentPage }
+
+                    if (currentPageContent != null) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = currentPageContent.text,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Page ${uiState.currentPage} not found")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Go to page dialog
+    if (showGoToDialog) {
+        AlertDialog(
+            onDismissRequest = { showGoToDialog = false },
+            title = { Text("Go to Page") },
+            text = {
+                OutlinedTextField(
+                    value = goToPageText,
+                    onValueChange = { goToPageText = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Page number (1-${uiState.totalPages})") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    goToPageText.toIntOrNull()?.let { viewModel.goToPage(it) }
+                    showGoToDialog = false
+                    goToPageText = ""
+                }) {
+                    Text("Go")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showGoToDialog = false
+                    goToPageText = ""
+                }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
