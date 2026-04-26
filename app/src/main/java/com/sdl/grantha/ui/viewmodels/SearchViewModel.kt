@@ -300,10 +300,18 @@ class SearchViewModel @Inject constructor(
 
                     // Search books in parallel with a concurrency limit of 4
                     // This allows new books to start as soon as one finishes, maximizing CPU usage.
-                    downloaded.asFlow().flatMapMerge(concurrency = 4) { grantha ->
+                    val concurrency = Runtime.getRuntime().availableProcessors()
+                    downloaded.asFlow().flatMapMerge(concurrency = concurrency) { grantha ->
                         flow {
                             yield()
-                            val text = repository.getGranthaText(grantha.name)
+                            
+                            // Check cache first to avoid slow decryption
+                            val text = if (SearchEngine.hasCache(grantha.name)) {
+                                "" // Empty string, searchAll will use cache
+                            } else {
+                                repository.getGranthaText(grantha.name)
+                            }
+
                             if (text == null) {
                                 synchronized(this@SearchViewModel) {
                                     booksProcessed++
@@ -417,11 +425,11 @@ class SearchViewModel @Inject constructor(
             try {
                 withContext(Dispatchers.IO) {
                     val grantha = repository.getGranthaByName(bookName)
-                    val text = repository.getGranthaText(bookName)
+                    val text = if (SearchEngine.hasCache(bookName)) "" else repository.getGranthaText(bookName)
                     
                     if (grantha != null && text != null) {
                         val subBooks = SearchEngine.parseSubBooks(grantha.booksRaw)
-                        val prepared = SearchEngine.prepareText(text)
+                        val prepared = SearchEngine.prepareText(bookName, text)
                         
                         val allSnippets = mutableListOf<SearchResult>()
                         for (q in textQueries) {

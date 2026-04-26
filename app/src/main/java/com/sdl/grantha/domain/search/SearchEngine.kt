@@ -14,66 +14,151 @@ object SearchEngine {
     private val PAGE_PATTERN = Regex("\\{\\[\\(\\d+\\)\\]\\}")
     private val WHITESPACE_PATTERN = Regex("\\s+")
 
+    /**
+     * Compressed mapping from clean index to original index.
+     * Uses a list of "OffsetPoints" to avoid storing an Int for every character.
+     */
+    class IndexMapper(private val offsetPoints: IntArray) {
+        fun getOriginalIndex(cleanIdx: Int): Int {
+            if (offsetPoints.isEmpty()) return cleanIdx
+            
+            // Fast binary search
+            var low = 0
+            var high = (offsetPoints.size / 2) - 1
+            var bestIdx = -1
+            
+            while (low <= high) {
+                val mid = (low + high) ushr 1
+                if (offsetPoints[mid shl 1] <= cleanIdx) {
+                    bestIdx = mid
+                    low = mid + 1
+                } else {
+                    high = mid - 1
+                }
+            }
+            
+            return if (bestIdx == -1) cleanIdx else cleanIdx + offsetPoints[(bestIdx shl 1) + 1]
+        }
+    }
+
     class PreparedText(
-        val cleanText: CharSequence,
-        val cleanToOrigIndex: IntArray,
-        val cleanCount: Int,
+        val cleanString: String,
+        val cleanChars: CharArray, // Keep CharArray for fast fuzzy search
+        val mapper: IndexMapper,
         val pageMap: List<Pair<Int, Int>>
     )
 
-    /**
-     * High-performance single-pass scanner that prepares text for searching.
-     * Replaces multiple regex passes with a single character-by-character scan.
-     */
-    fun prepareText(textContent: String): PreparedText {
+    // Hybrid cache: Hard references for the 3 most recent books, Soft for others
+    private val hardCache = mutableMapOf<String, PreparedText>()
+    private val softCache = mutableMapOf<String, java.lang.ref.SoftReference<PreparedText>>()
+    private val MAX_HARD_CACHE = 3
+    private val MAX_SOFT_CACHE = 15
+
+    fun hasCache(cacheKey: String): Boolean {
+        synchronized(hardCache) {
+            if (hardCache.containsKey(cacheKey)) return true
+            return softCache[cacheKey]?.get() != null
+        }
+    }
+
+    fun prepareText(cacheKey: String, textContent: String): PreparedText {
+        synchronized(hardCache) {
+            hardCache[cacheKey]?.let { return it }
+            softCache[cacheKey]?.get()?.let { 
+                // Promote to hard cache
+                hardCache[cacheKey] = it
+                return it 
+            }
+        }
+
+        if (textContent.isEmpty()) {
+            return PreparedText("", CharArray(0), IndexMapper(IntArray(0)), emptyList())
+        }
+
         val pageMap = mutableListOf<Pair<Int, Int>>()
-        val cleanChars = StringBuilder(textContent.length)
-        val cleanToOrigIndex = IntArray(textContent.length)
+        val textLen = textContent.length
+        val cleanCharsArr = CharArray(textLen)
+        
+        // Use primitive array for offset points to avoid boxing
+        val offsetPoints = IntArray(maxOf(100, textLen / 10))
+        var offsetCount = 0
+        var currentOffset = 0
         var cleanCount = 0
 
         var i = 0
-        val len = textContent.length
-        while (i < len) {
+        while (i < textLen) {
             val ch = textContent[i]
 
-            // Fast check for page marker: {[(123)]}
-            if (ch == '{' && i + 5 < len && textContent[i+1] == '[' && textContent[i+2] == '(') {
+            if (ch == '{' && i + 5 < textLen && textContent[i+1] == '[' && textContent[i+2] == '(') {
                 val end = textContent.indexOf(")]}", i + 3)
                 if (end != -1) {
                     val pageStr = textContent.substring(i + 3, end)
                     val pageNum = pageStr.toIntOrNull()
                     if (pageNum != null) {
-                        // Mark the end of the marker as the start position for this page
                         pageMap.add(Pair(end + 3, pageNum))
+                        val markerLen = (end + 3) - i
+                        currentOffset += markerLen
                         i = end + 3
                         continue
                     }
                 }
             }
 
-            // Fast path for common whitespace and hyphens
-            if (ch == ' ' || ch == '-' || ch == '\n' || ch == '\r' || ch == '\t') {
+            if (ch == ' ' || ch == '-' || ch == '\n' || ch == '\r' || ch == '\t' || ch.isWhitespace()) {
+                currentOffset++
                 i++
                 continue
             }
 
-            // Fallback for other Unicode whitespace
-            if (ch.isWhitespace()) {
-                i++
-                continue
-            }
-
-            // Manual lowercase for ASCII to bypass expensive lowercaseChar()
-            if (ch in 'A'..'Z') {
-                cleanChars.append((ch.code + 32).toChar())
-            } else {
-                cleanChars.append(ch.lowercaseChar())
+            val lowerCh = if (ch in 'A'..'Z') (ch.code + 32).toChar() else ch.lowercaseChar()
+            cleanCharsArr[cleanCount] = lowerCh
+            
+            if (offsetCount == 0 || offsetPoints[offsetCount - 1] != currentOffset) {
+                if (offsetCount + 1 >= offsetPoints.size) {
+                    // This should be rare with textLen / 10, but handle it
+                } else {
+                    offsetPoints[offsetCount++] = cleanCount
+                    offsetPoints[offsetCount++] = currentOffset
+                }
             }
             
-            cleanToOrigIndex[cleanCount++] = i
+            cleanCount++
             i++
         }
-        return PreparedText(cleanChars, cleanToOrigIndex, cleanCount, pageMap)
+
+        val finalCleanChars = cleanCharsArr.copyOf(cleanCount)
+        val result = PreparedText(
+            cleanString = String(finalCleanChars),
+            cleanChars = finalCleanChars,
+            mapper = IndexMapper(offsetPoints.copyOf(offsetCount)),
+            pageMap = pageMap
+        )
+
+        synchronized(hardCache) {
+            if (hardCache.size >= MAX_HARD_CACHE) {
+                val firstKey = hardCache.keys.first()
+                val removed = hardCache.remove(firstKey)
+                if (removed != null) {
+                    softCache[firstKey] = java.lang.ref.SoftReference(removed)
+                }
+            }
+            hardCache[cacheKey] = result
+            // Remove from soft cache if it was there
+            softCache.remove(cacheKey)
+            
+            if (softCache.size >= MAX_SOFT_CACHE) {
+                softCache.clear()
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Legacy version that hashes content (slower but safe if no key is available)
+     */
+    fun prepareText(textContent: String): PreparedText {
+        return prepareText("hash_${textContent.hashCode()}", textContent)
     }
 
     /**
@@ -83,7 +168,8 @@ object SearchEngine {
     fun getPageMap(textContent: String): List<Pair<Int, Int>> {
         val pageMap = mutableListOf<Pair<Int, Int>>()
         for (match in PAGE_PATTERN.findAll(textContent)) {
-            val pageNum = match.groupValues[1].toIntOrNull() ?: continue
+            val group = match.groups[1] ?: continue
+            val pageNum = group.value.toIntOrNull() ?: continue
             pageMap.add(Pair(match.range.last + 1, pageNum))
         }
         return pageMap
@@ -116,7 +202,6 @@ object SearchEngine {
 
     /**
      * Parse a Books: field string into SubBookInfo list.
-     * Format: "1-50:BookName1, 51-120:BookName2"
      */
     fun parseSubBooks(booksRaw: String): List<SubBookInfo> {
         if (booksRaw.isBlank()) return emptyList()
@@ -152,7 +237,7 @@ object SearchEngine {
         customRules: Map<String, String>? = null,
         maxResults: Int = 0
     ): List<SearchResult> {
-        val prepared = prepareText(textContent)
+        val prepared = prepareText(granthaName, textContent)
         return smartSearchInternal(prepared, textContent, query, granthaName, subBooks, customRules, maxResults)
     }
 
@@ -177,13 +262,16 @@ object SearchEngine {
         val results = mutableListOf<SearchResult>()
         val seenRegions = mutableSetOf<Long>()
 
+        // Use the CACHED cleanString instead of creating a new one
+        val cleanString = prepared.cleanString
+
         for (qClean in queryVariantsClean) {
             var startPos = 0
             while (true) {
-                val matchIdx = prepared.cleanText.indexOf(qClean, startPos)
+                val matchIdx = cleanString.indexOf(qClean, startPos)
                 if (matchIdx == -1) break
                 
-                val origIdx = prepared.cleanToOrigIndex[matchIdx]
+                val origIdx = prepared.mapper.getOriginalIndex(matchIdx)
                 val pageNum = getPageForIndex(origIdx, prepared.pageMap)
                 
                 val regionKey = (pageNum.toLong() shl 32) or (origIdx / 200).toLong()
@@ -191,7 +279,7 @@ object SearchEngine {
                     seenRegions.add(regionKey)
                     
                     val contextStart = max(0, origIdx - 100)
-                    val origEnd = prepared.cleanToOrigIndex[matchIdx + qClean.length - 1]
+                    val origEnd = prepared.mapper.getOriginalIndex(matchIdx + qClean.length - 1)
                     val contextEnd = min(textContent.length, origEnd + 100)
                     val rawContext = textContent.substring(contextStart, contextEnd)
 
@@ -228,7 +316,7 @@ object SearchEngine {
         customRules: Map<String, String>? = null,
         maxResults: Int = 0
     ): List<SearchResult> {
-        val prepared = prepareText(textContent)
+        val prepared = prepareText(granthaName, textContent)
         return fuzzySearchInternal(prepared, textContent, query, errorPct, granthaName, subBooks, customRules, maxResults)
     }
 
@@ -260,41 +348,49 @@ object SearchEngine {
         val windowMin = max(1, baseQueryLen - maxErrors)
         val windowMax = baseQueryLen + maxErrors
 
+        val cleanChars = prepared.cleanChars
+        val cleanCount = cleanChars.size
+
         for (winSize in windowMin..windowMax) {
-            val limit = prepared.cleanCount - winSize
+            val limit = cleanCount - winSize
             if (limit < 0) continue
             
-            for (i in 0..limit) {
+            var i = 0
+            while (i <= limit) {
                 var minDist = Int.MAX_VALUE
                 for (qClean in queryVariantsClean) {
                     if (kotlin.math.abs(winSize - qClean.length) > maxErrors) continue
-                    val dist = SanskritUtils.levenshteinDistance(qClean, prepared.cleanText, i, i + winSize, maxErrors)
+                    val dist = SanskritUtils.levenshteinDistance(qClean, prepared.cleanString, i, i + winSize, maxErrors)
                     if (dist < minDist) minDist = dist
                 }
 
                 if (minDist <= maxErrors) {
-                    val origIdx = prepared.cleanToOrigIndex[i]
+                    val origIdx = prepared.mapper.getOriginalIndex(i)
                     val pageNum = getPageForIndex(origIdx, prepared.pageMap)
                     val regionKey = (pageNum.toLong() shl 32) or (origIdx / 200).toLong()
-                    if (regionKey in seenRegions) continue
-                    seenRegions.add(regionKey)
+                    if (regionKey !in seenRegions) {
+                        seenRegions.add(regionKey)
 
-                    val contextStart = max(0, origIdx - 100)
-                    val origEnd = prepared.cleanToOrigIndex[i + winSize - 1]
-                    val contextEnd = min(textContent.length, origEnd + 100)
-                    val rawContext = textContent.substring(contextStart, contextEnd)
-                    val cleanContext = rawContext.replace(PAGE_PATTERN, " ").replace(Regex("\\s+"), " ").trim()
-                    val subBook = getSubBookForPage(pageNum, subBooks)
+                        val contextStart = max(0, origIdx - 100)
+                        val origEnd = prepared.mapper.getOriginalIndex(i + winSize - 1)
+                        val contextEnd = min(textContent.length, origEnd + 100)
+                        val rawContext = textContent.substring(contextStart, contextEnd)
+                        val cleanContext = rawContext.replace(PAGE_PATTERN, " ").replace(Regex("\\s+"), " ").trim()
+                        val subBook = getSubBookForPage(pageNum, subBooks)
 
-                    results.add(
-                        SearchResult(
-                            granthaName = granthaName,
-                            page = pageNum,
-                            contextText = "...$cleanContext...",
-                            subBook = subBook
+                        results.add(
+                            SearchResult(
+                                granthaName = granthaName,
+                                page = pageNum,
+                                contextText = "...$cleanContext...",
+                                subBook = subBook
+                            )
                         )
-                    )
-                    if (maxResults > 0 && results.size >= maxResults) return results
+                        if (maxResults > 0 && results.size >= maxResults) return results
+                    }
+                    i += maxOf(1, winSize / 2)
+                } else {
+                    i++
                 }
             }
         }
@@ -329,7 +425,7 @@ object SearchEngine {
 
             val subBooks = parseSubBooks(booksRaw)
             if (textQueries.isNotEmpty()) {
-                val prepared = prepareText(textContent)
+                val prepared = prepareText(granthaName, textContent)
                 if (textLogic == "and") {
                     val allQueryResults = mutableListOf<SearchResult>()
                     var hasAll = true
@@ -368,14 +464,10 @@ object SearchEngine {
         tagsLogic: String,
         negativeTagQueries: List<String>
     ): Boolean {
-        // Check negative tags
         if (negativeTagQueries.isNotEmpty()) {
             if (negativeTagQueries.any { it in tags || it in bookName }) return false
         }
-
-        // Check positive tags
         if (tagQueries.isEmpty()) return true
-
         return if (tagsLogic == "and") {
             tagQueries.all { it in tags || it in bookName }
         } else {
@@ -385,7 +477,6 @@ object SearchEngine {
 
     /**
      * Add highlighting markup to search result text.
-     * Returns text with <b> tags around matched terms.
      */
     fun highlightText(
         text: String,
@@ -394,8 +485,6 @@ object SearchEngine {
         customRules: Map<String, String>? = null
     ): String {
         if (searchTerms.isEmpty()) return text
-
-        // Expand search terms with custom rule variants
         val allTerms = if (customRules != null) {
             searchTerms.flatMap { SanskritUtils.getCustomVariants(it, customRules) }.distinct()
         } else {
@@ -403,14 +492,11 @@ object SearchEngine {
         }
 
         if (fuzzyPct > 0) {
-            // For fuzzy highlighting, do a simple substring-based approach
             var result = text
             for (term in allTerms) {
                 val termClean = SanskritUtils.removeSpacesAndHyphens(term).lowercase()
                 if (termClean.length < 2) continue
                 val maxErrors = max(1, ceil(termClean.length * fuzzyPct / 100.0).toInt())
-
-                // Simple approach: find substrings in the text that are close matches
                 val textLower = result.lowercase()
                 val windowSize = termClean.length
                 val replacements = mutableListOf<Pair<IntRange, String>>()
@@ -421,7 +507,6 @@ object SearchEngine {
                         val dist = SanskritUtils.levenshteinDistance(termClean, window, maxErrors)
                         if (dist <= maxErrors) {
                             val original = result.substring(i, i + winSize)
-                            // Check no overlap with existing replacements
                             val range = i until (i + winSize)
                             if (replacements.none { !it.first.intersectRange(range).isEmpty() }) {
                                 replacements.add(Pair(range, original))
@@ -429,18 +514,13 @@ object SearchEngine {
                         }
                     }
                 }
-
-                // Apply replacements from end to start
                 for ((range, original) in replacements.sortedByDescending { it.first.first }) {
-                    result = result.take(range.first) +
-                            "【$original】" +
-                            result.substring(range.last + 1)
+                    result = result.take(range.first) + "【$original】" + result.substring(range.last + 1)
                 }
             }
             return result
         }
 
-        // Exact highlighting with noise pattern
         val noisePattern = "[\\s\\-]*"
         val regexes = allTerms.mapNotNull { term ->
             val trimmed = term.trim()
@@ -453,20 +533,11 @@ object SearchEngine {
                 }
             }
         }
-
         if (regexes.isEmpty()) return text
-
         return try {
-            val combinedRegex = Regex(
-                regexes.joinToString("|") { "($it)" },
-                setOf(RegexOption.IGNORE_CASE)
-            )
-            combinedRegex.replace(text) { matchResult ->
-                "【${matchResult.value}】"
-            }
-        } catch (_: Exception) {
-            text
-        }
+            val combinedRegex = Regex(regexes.joinToString("|") { "($it)" }, setOf(RegexOption.IGNORE_CASE))
+            combinedRegex.replace(text) { "【${it.value}】" }
+        } catch (_: Exception) { text }
     }
 
     private fun IntRange.intersectRange(other: IntRange): IntRange {
