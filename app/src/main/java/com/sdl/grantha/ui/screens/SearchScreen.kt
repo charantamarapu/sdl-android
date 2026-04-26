@@ -422,16 +422,43 @@ fun SearchScreen(
                             steps = 9
                         )
 
-                        // Custom Sanskrit rules
-                        OutlinedTextField(
-                            value = uiState.customRulesText,
-                            onValueChange = { viewModel.setCustomRulesText(it) },
+                        // Sanskrit Normalization Toggle
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Custom Rules (A=B format)") },
-                            placeholder = { Text("ः=ो\nं=ँ") },
-                            minLines = 2,
-                            maxLines = 3
-                        )
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Search Sanskrit Text Variants",
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                Text(
+                                    "Define custom rules to find different forms of the same word",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = uiState.sanskritNormalize,
+                                onCheckedChange = { viewModel.toggleSanskritNormalize() }
+                            )
+                        }
+
+                        if (uiState.sanskritNormalize) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            // Custom Sanskrit rules
+                            OutlinedTextField(
+                                value = uiState.customRulesText,
+                                onValueChange = { viewModel.setCustomRulesText(it) },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Search Variants (form1=form2)") },
+                                supportingText = { Text("When you search for form1, it will also find form2") },
+                                placeholder = { Text("ः=र्\nः=ो\nः=स्\nऽ=अ") },
+                                minLines = 4,
+                                maxLines = 6
+                            )
+                        }
                     }
                 }
             }

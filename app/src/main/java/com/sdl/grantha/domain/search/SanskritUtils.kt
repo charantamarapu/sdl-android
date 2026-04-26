@@ -14,7 +14,7 @@ object SanskritUtils {
      * @param customRules Map of variant_a to variant_b
      * @return List of variant strings including the original
      */
-    fun getCustomVariants(text: String, customRules: Map<String, String>?): List<String> {
+    fun getCustomVariants(text: String, customRules: List<Pair<String, String>>?): List<String> {
         if (customRules.isNullOrEmpty()) return listOf(text)
 
         val variants = mutableSetOf(text)

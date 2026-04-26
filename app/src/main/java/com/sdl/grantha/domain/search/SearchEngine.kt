@@ -240,7 +240,7 @@ object SearchEngine {
         query: String,
         granthaName: String = "",
         subBooks: List<SubBookInfo> = emptyList(),
-        customRules: Map<String, String>? = null,
+        customRules: List<Pair<String, String>>? = null,
         maxResults: Int = 0
     ): List<SearchResult> {
         val prepared = prepareText(granthaName, textContent)
@@ -253,15 +253,16 @@ object SearchEngine {
         query: String,
         granthaName: String,
         subBooks: List<SubBookInfo>,
-        customRules: Map<String, String>?,
+        customRules: List<Pair<String, String>>?,
         maxResults: Int
     ): List<SearchResult> {
         if (query.isBlank()) return emptyList()
 
-        val queryVariants = SanskritUtils.getCustomVariants(query, customRules)
-        val queryVariantsClean = queryVariants
+        val customVariants = SanskritUtils.getCustomVariants(query, customRules)
+        val queryVariantsClean = customVariants
             .map { SanskritUtils.removeSpacesAndHyphens(it).lowercase() }
             .filter { it.isNotEmpty() }
+            .distinct()
 
         if (queryVariantsClean.isEmpty()) return emptyList()
 
@@ -326,7 +327,7 @@ object SearchEngine {
         errorPct: Int = 20,
         granthaName: String = "",
         subBooks: List<SubBookInfo> = emptyList(),
-        customRules: Map<String, String>? = null,
+        customRules: List<Pair<String, String>>? = null,
         maxResults: Int = 0
     ): List<SearchResult> {
         val prepared = prepareText(granthaName, textContent)
@@ -340,15 +341,16 @@ object SearchEngine {
         errorPct: Int,
         granthaName: String,
         subBooks: List<SubBookInfo>,
-        customRules: Map<String, String>?,
+        customRules: List<Pair<String, String>>?,
         maxResults: Int
     ): List<SearchResult> {
         if (query.isBlank()) return emptyList()
 
-        val queryVariants = SanskritUtils.getCustomVariants(query, customRules)
-        val queryVariantsClean = queryVariants
+        val customVariants = SanskritUtils.getCustomVariants(query, customRules)
+        val queryVariantsClean = customVariants
             .map { SanskritUtils.removeSpacesAndHyphens(it).lowercase() }
             .filter { it.length >= 2 }
+            .distinct()
 
         if (queryVariantsClean.isEmpty()) return emptyList()
 
@@ -435,7 +437,7 @@ object SearchEngine {
         tagQueries: List<String> = emptyList(),
         tagsLogic: String = "or",
         negativeTagQueries: List<String> = emptyList(),
-        customRules: Map<String, String>? = null,
+        customRules: List<Pair<String, String>>? = null,
         maxPerBook: Int = 0,
         stopAtFirstMatch: Boolean = false,
         onProgress: ((searched: Int, total: Int, bookName: String) -> Unit)? = null
@@ -518,7 +520,7 @@ object SearchEngine {
         text: String,
         searchTerms: List<String>,
         fuzzyPct: Int = 0,
-        customRules: Map<String, String>? = null
+        customRules: List<Pair<String, String>>? = null
     ): String {
         if (searchTerms.isEmpty()) return text
         val allTerms = if (customRules != null) {

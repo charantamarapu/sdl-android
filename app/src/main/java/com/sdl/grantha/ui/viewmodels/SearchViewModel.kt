@@ -43,8 +43,14 @@ class SearchViewModel @Inject constructor(
         val hasSearched: Boolean = false,
         val availableTags: List<String> = emptyList(),
         val selectedTags: Set<String> = emptySet(),
-        val customRules: Map<String, String> = emptyMap(),
-        val customRulesText: String = "",
+        val customRules: List<Pair<String, String>> = listOf(
+            "ः" to "र्",
+            "ः" to "ो",
+            "ः" to "स्",
+            "ऽ" to "अ"
+        ),
+        val customRulesText: String = "ः=र्\nः=ो\nः=स्\nऽ=अ",
+        val sanskritNormalize: Boolean = false,
         val maxPerBook: Int = 20,
         val isAdvancedMode: Boolean = false,
         val isOptionsExpanded: Boolean = false,
@@ -151,6 +157,11 @@ class SearchViewModel @Inject constructor(
         _uiState.update { it.copy(maxPerBook = max) }
     }
 
+    fun toggleSanskritNormalize() {
+        _uiState.update { it.copy(sanskritNormalize = !it.sanskritNormalize) }
+    }
+
+
     fun toggleTag(tag: String) {
         _uiState.update { state ->
             val newTags = state.selectedTags.toMutableSet()
@@ -169,13 +180,13 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    private fun parseCustomRules(text: String): Map<String, String> {
-        if (text.isBlank()) return emptyMap()
-        val rules = mutableMapOf<String, String>()
+    private fun parseCustomRules(text: String): List<Pair<String, String>> {
+        if (text.isBlank()) return emptyList()
+        val rules = mutableListOf<Pair<String, String>>()
         for (line in text.split("\n", ",")) {
             val parts = line.trim().split("=", limit = 2)
             if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
-                rules[parts[0].trim()] = parts[1].trim()
+                rules.add(parts[0].trim() to parts[1].trim())
             }
         }
         return rules
@@ -332,7 +343,7 @@ class SearchViewModel @Inject constructor(
                                 tagQueries = tagQueries,
                                 tagsLogic = state.tagsLogic,
                                 negativeTagQueries = negTagQueries,
-                                customRules = state.customRules.ifEmpty { null },
+                                customRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null,
                                 maxPerBook = state.maxPerBook,
                                 stopAtFirstMatch = true,
                                 onProgress = null
@@ -442,10 +453,11 @@ class SearchViewModel @Inject constructor(
                         
                         var allSnippets = mutableListOf<SearchResult>()
                         for (q in textQueries) {
+                             val activeRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null
                              val matches = if (state.fuzzyPct > 0) {
-                                 SearchEngine.fuzzySearchInternal(prepared, text, q, state.fuzzyPct, bookName, subBooks, state.customRules.ifEmpty { null }, state.maxPerBook)
+                                 SearchEngine.fuzzySearchInternal(prepared, text, q, state.fuzzyPct, bookName, subBooks, activeRules, state.maxPerBook)
                              } else {
-                                 SearchEngine.smartSearchInternal(prepared, text, q, bookName, subBooks, state.customRules.ifEmpty { null }, state.maxPerBook)
+                                 SearchEngine.smartSearchInternal(prepared, text, q, bookName, subBooks, activeRules, state.maxPerBook)
                              }
                              allSnippets.addAll(matches)
                         }
