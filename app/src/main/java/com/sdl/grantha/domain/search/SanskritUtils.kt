@@ -58,65 +58,84 @@ object SanskritUtils {
      */
     fun levenshteinDistance(
         s1: String, 
-        s2: CharSequence, 
-        s2Start: Int = 0, 
-        s2End: Int = s2.length,
-        cutoff: Int = Int.MAX_VALUE
+        s2: CharArray, 
+        s2Start: Int, 
+        s2End: Int,
+        cutoff: Int,
+        prevRowIn: IntArray? = null,
+        currRowIn: IntArray? = null
     ): Int {
         val len1 = s1.length
         val len2 = s2End - s2Start
-
-        // Quick check: if length difference exceeds cutoff, skip
         if (kotlin.math.abs(len1 - len2) > cutoff) return Int.MAX_VALUE
         if (len1 == 0) return if (len2 <= cutoff) len2 else Int.MAX_VALUE
         if (len2 == 0) return if (len1 <= cutoff) len1 else Int.MAX_VALUE
 
-        // Ensure s1 is the shorter string to minimize row size
-        // However, in our use case s1 is the query (short) and s2 is the window (short)
-        // so we don't need to swap them.
-
-        val prevRow = IntArray(len2 + 1) { it }
-        val currRow = IntArray(len2 + 1)
+        val prevRow = prevRowIn ?: IntArray(len2 + 1)
+        val currRow = currRowIn ?: IntArray(len2 + 1)
+        for (j in 0..len2) prevRow[j] = j
 
         for (i in 1..len1) {
             currRow[0] = i
             val char1 = s1[i - 1]
-            
-            // Banded Levenshtein: only compute values within distance 'cutoff' of the diagonal
             val start = maxOf(1, i - cutoff)
             val end = minOf(len2, i + cutoff)
-            
             if (start > 1) currRow[start - 1] = Int.MAX_VALUE
-            
             var minInRow = if (start <= i + cutoff) currRow[0] else Int.MAX_VALUE
-            
             for (j in start..end) {
                 val cost = if (char1 == s2[s2Start + j - 1]) 0 else 1
-                
-                // Optimized minOf for 3 values
                 val v1 = prevRow[j] + 1
                 val v2 = currRow[j - 1] + 1
                 val v3 = prevRow[j - 1] + cost
-                
-                val res = if (v1 < v2) {
-                    if (v1 < v3) v1 else v3
-                } else {
-                    if (v2 < v3) v2 else v3
-                }
-                
+                val res = if (v1 < v2) (if (v1 < v3) v1 else v3) else (if (v2 < v3) v2 else v3)
                 currRow[j] = res
                 if (res < minInRow) minInRow = res
             }
-
-            // Early exit if minimum in this row already exceeds cutoff
             if (minInRow > cutoff) return Int.MAX_VALUE
-
-            // Swap rows: copy currRow to prevRow
             System.arraycopy(currRow, 0, prevRow, 0, len2 + 1)
         }
+        return if (prevRow[len2] <= cutoff) prevRow[len2] else Int.MAX_VALUE
+    }
 
-        val finalDist = prevRow[len2]
-        return if (finalDist <= cutoff) finalDist else Int.MAX_VALUE
+    fun levenshteinDistance(
+        s1: String, 
+        s2: CharSequence, 
+        s2Start: Int = 0, 
+        s2End: Int = s2.length,
+        cutoff: Int = Int.MAX_VALUE,
+        prevRowIn: IntArray? = null,
+        currRowIn: IntArray? = null
+    ): Int {
+        val len1 = s1.length
+        val len2 = s2End - s2Start
+        if (kotlin.math.abs(len1 - len2) > cutoff) return Int.MAX_VALUE
+        if (len1 == 0) return if (len2 <= cutoff) len2 else Int.MAX_VALUE
+        if (len2 == 0) return if (len1 <= cutoff) len1 else Int.MAX_VALUE
+
+        val prevRow = prevRowIn ?: IntArray(len2 + 1)
+        val currRow = currRowIn ?: IntArray(len2 + 1)
+        for (j in 0..len2) prevRow[j] = j
+
+        for (i in 1..len1) {
+            currRow[0] = i
+            val char1 = s1[i - 1]
+            val start = maxOf(1, i - cutoff)
+            val end = minOf(len2, i + cutoff)
+            if (start > 1) currRow[start - 1] = Int.MAX_VALUE
+            var minInRow = if (start <= i + cutoff) currRow[0] else Int.MAX_VALUE
+            for (j in start..end) {
+                val cost = if (char1 == s2[s2Start + j - 1]) 0 else 1
+                val v1 = prevRow[j] + 1
+                val v2 = currRow[j - 1] + 1
+                val v3 = prevRow[j - 1] + cost
+                val res = if (v1 < v2) (if (v1 < v3) v1 else v3) else (if (v2 < v3) v2 else v3)
+                currRow[j] = res
+                if (res < minInRow) minInRow = res
+            }
+            if (minInRow > cutoff) return Int.MAX_VALUE
+            System.arraycopy(currRow, 0, prevRow, 0, len2 + 1)
+        }
+        return if (prevRow[len2] <= cutoff) prevRow[len2] else Int.MAX_VALUE
     }
 
     /**

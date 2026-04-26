@@ -87,7 +87,7 @@ object SearchEngine {
         val cleanCharsArr = CharArray(textLen)
         
         // Use primitive array for offset points to avoid boxing
-        val offsetPoints = IntArray(maxOf(100, textLen / 10))
+        var offsetPoints = IntArray(maxOf(100, textLen / 4))
         var offsetCount = 0
         var currentOffset = 0
         var cleanCount = 0
@@ -122,11 +122,10 @@ object SearchEngine {
             
             if (offsetCount == 0 || offsetPoints[offsetCount - 1] != currentOffset) {
                 if (offsetCount + 1 >= offsetPoints.size) {
-                    // This should be rare with textLen / 10, but handle it
-                } else {
-                    offsetPoints[offsetCount++] = cleanCount
-                    offsetPoints[offsetCount++] = currentOffset
+                    offsetPoints = offsetPoints.copyOf(offsetPoints.size * 2)
                 }
+                offsetPoints[offsetCount++] = cleanCount
+                offsetPoints[offsetCount++] = currentOffset
             }
             
             cleanCount++
@@ -358,12 +357,15 @@ object SearchEngine {
 
         val results = mutableListOf<SearchResult>()
         val seenRegions = mutableSetOf<Long>()
-
         val windowMin = max(1, baseQueryLen - maxErrors)
         val windowMax = baseQueryLen + maxErrors
 
         val cleanChars = prepared.cleanChars
         val cleanCount = cleanChars.size
+        
+        // Reuse rows to avoid millions of allocations per book
+        val prevRow = IntArray(windowMax + 1)
+        val currRow = IntArray(windowMax + 1)
 
         for (winSize in windowMin..windowMax) {
             val limit = cleanCount - winSize
@@ -371,44 +373,48 @@ object SearchEngine {
             
             var i = 0
             while (i <= limit) {
-                var minDist = Int.MAX_VALUE
+                var foundMatch = false
                 for (qClean in queryVariantsClean) {
                     if (kotlin.math.abs(winSize - qClean.length) > maxErrors) continue
-                    val dist = SanskritUtils.levenshteinDistance(qClean, prepared.cleanString, i, i + winSize, maxErrors)
-                    if (dist < minDist) minDist = dist
-                }
+                    
+                    val dist = SanskritUtils.levenshteinDistance(qClean, cleanChars, i, i + winSize, maxErrors, prevRow, currRow)
+                    if (dist <= maxErrors) {
+                        foundMatch = true
+                        val origIdx = prepared.mapper.getOriginalIndex(i)
+                        val matchedPage = getPageForIndex(origIdx, prepared.pageMap)
+                        val regionKey = (matchedPage.toLong() shl 32) or (origIdx / 200).toLong()
+                        if (regionKey !in seenRegions) {
+                            seenRegions.add(regionKey)
 
-                if (minDist <= maxErrors) {
-                    val origIdx = prepared.mapper.getOriginalIndex(i)
-                    val pageNum = getPageForIndex(origIdx, prepared.pageMap)
-                    val regionKey = (pageNum.toLong() shl 32) or (origIdx / 200).toLong()
-                    if (regionKey !in seenRegions) {
-                        seenRegions.add(regionKey)
+                            val contextStart = max(0, origIdx - 100)
+                            val origEnd = prepared.mapper.getOriginalIndex(i + winSize - 1)
+                            val contextEnd = min(textContent.length, origEnd + 100)
+                            
+                            val cleanContext = if (textContent.isNotEmpty()) {
+                                val rawContext = textContent.substring(contextStart, contextEnd)
+                                rawContext.replace(PAGE_PATTERN, " ").replace(Regex("\\s+"), " ").trim()
+                            } else {
+                                "MATCH_FOUND_WITHOUT_TEXT"
+                            }
+                            
+                            val subBook = getSubBookForPage(matchedPage, subBooks)
 
-                        val contextStart = max(0, origIdx - 100)
-                        val origEnd = prepared.mapper.getOriginalIndex(i + winSize - 1)
-                        val contextEnd = min(textContent.length, origEnd + 100)
-                        
-                        val cleanContext = if (textContent.isNotEmpty()) {
-                            val rawContext = textContent.substring(contextStart, contextEnd)
-                            rawContext.replace(PAGE_PATTERN, " ").replace(Regex("\\s+"), " ").trim()
-                        } else {
-                            "MATCH_FOUND_WITHOUT_TEXT"
-                        }
-                        
-                        val subBook = getSubBookForPage(pageNum, subBooks)
-
-                        results.add(
-                            SearchResult(
-                                granthaName = granthaName,
-                                page = pageNum,
-                                contextText = if (cleanContext == "MATCH_FOUND_WITHOUT_TEXT") cleanContext else "...$cleanContext...",
-                                subBook = subBook,
-                                matchOffset = origIdx
+                            results.add(
+                                SearchResult(
+                                    granthaName = granthaName,
+                                    page = matchedPage,
+                                    contextText = if (cleanContext == "MATCH_FOUND_WITHOUT_TEXT") cleanContext else "...$cleanContext...",
+                                    subBook = subBook,
+                                    matchOffset = origIdx
+                                )
                             )
-                        )
-                        if (maxResults > 0 && results.size >= maxResults) return results
+                            if (maxResults > 0 && results.size >= maxResults) return results
+                        }
+                        break
                     }
+                }
+                
+                if (foundMatch) {
                     i += maxOf(1, winSize / 2)
                 } else {
                     i++
