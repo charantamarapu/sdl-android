@@ -339,13 +339,22 @@ class SearchViewModel @Inject constructor(
                             )
 
                             val highlighted = partialResults.map { result ->
+                                var finalResult = result
+                                if (result.contextText == "MATCH_FOUND_WITHOUT_TEXT") {
+                                    val realText = repository.getGranthaText(grantha.name)
+                                    if (realText != null) {
+                                        val cleanContext = SearchEngine.extractContext(realText, result.matchOffset)
+                                        finalResult = result.copy(contextText = "...$cleanContext...")
+                                    }
+                                }
+
                                 val h = SearchEngine.highlightText(
-                                    result.contextText,
+                                    finalResult.contextText,
                                     textQueries,
                                     state.fuzzyPct,
                                     state.customRules.ifEmpty { null }
                                 )
-                                result.copy(highlightedText = h)
+                                finalResult.copy(highlightedText = h)
                             }
 
                             synchronized(this@SearchViewModel) {
@@ -431,7 +440,7 @@ class SearchViewModel @Inject constructor(
                         val subBooks = SearchEngine.parseSubBooks(grantha.booksRaw)
                         val prepared = SearchEngine.prepareText(bookName, text)
                         
-                        val allSnippets = mutableListOf<SearchResult>()
+                        var allSnippets = mutableListOf<SearchResult>()
                         for (q in textQueries) {
                              val matches = if (state.fuzzyPct > 0) {
                                  SearchEngine.fuzzySearchInternal(prepared, text, q, state.fuzzyPct, bookName, subBooks, state.customRules.ifEmpty { null }, state.maxPerBook)
@@ -441,9 +450,20 @@ class SearchViewModel @Inject constructor(
                              allSnippets.addAll(matches)
                         }
                         
+                        // Lazy Context Filling for Deep Search
+                        if (allSnippets.any { it.contextText == "MATCH_FOUND_WITHOUT_TEXT" }) {
+                            val realText = repository.getGranthaText(bookName)
+                            if (realText != null) {
+                                allSnippets = allSnippets.map { 
+                                    if (it.contextText == "MATCH_FOUND_WITHOUT_TEXT") {
+                                        it.copy(contextText = "...${SearchEngine.extractContext(realText, it.matchOffset)}...")
+                                    } else it
+                                }.toMutableList()
+                            }
+                        }
+
                         val sorted = allSnippets.sortedBy { it.page }
                         
-                        // Add highlighting to deep search results
                         val highlighted = sorted.map { result ->
                             val h = SearchEngine.highlightText(
                                 result.contextText,

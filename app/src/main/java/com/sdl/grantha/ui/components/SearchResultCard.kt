@@ -4,7 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -48,7 +48,7 @@ fun SearchResultCard(
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(
-                        Icons.Filled.MenuBook,
+                        Icons.AutoMirrored.Filled.MenuBook,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
@@ -115,12 +115,7 @@ fun SearchResultCard(
 @Composable
 private fun formatHighlightedText(text: String): AnnotatedString {
     val highlightColor = HighlightYellow
-    val parts = text.split("【", "】")
-
     return buildAnnotatedString {
-        var isHighlight = false
-        // The text is split such that odd indices (after 【) are highlights
-        var index = 0
         var remaining = text
         while (remaining.isNotEmpty()) {
             val startMarker = remaining.indexOf("【")

@@ -14,6 +14,13 @@ object SearchEngine {
     private val PAGE_PATTERN = Regex("\\{\\[\\(\\d+\\)\\]\\}")
     private val WHITESPACE_PATTERN = Regex("\\s+")
 
+    fun extractContext(textContent: String, origIdx: Int): String {
+        val contextStart = maxOf(0, origIdx - 100)
+        val contextEnd = minOf(textContent.length, origIdx + 100)
+        val rawContext = textContent.substring(contextStart, contextEnd)
+        return rawContext.replace(PAGE_PATTERN, " ").replace(WHITESPACE_PATTERN, " ").trim()
+    }
+
     /**
      * Compressed mapping from clean index to original index.
      * Uses a list of "OffsetPoints" to avoid storing an Int for every character.
@@ -281,17 +288,24 @@ object SearchEngine {
                     val contextStart = max(0, origIdx - 100)
                     val origEnd = prepared.mapper.getOriginalIndex(matchIdx + qClean.length - 1)
                     val contextEnd = min(textContent.length, origEnd + 100)
-                    val rawContext = textContent.substring(contextStart, contextEnd)
-
-                    val cleanContext = rawContext.replace(PAGE_PATTERN, " ").replace(WHITESPACE_PATTERN, " ").trim()
-                    val subBook = getSubBookForPage(pageNum, subBooks)
+                    
+                    val cleanContext = if (textContent.isNotEmpty()) {
+                        val rawContext = textContent.substring(contextStart, contextEnd)
+                        rawContext.replace(PAGE_PATTERN, " ").replace(WHITESPACE_PATTERN, " ").trim()
+                    } else {
+                        "MATCH_FOUND_WITHOUT_TEXT" // Signal that we need to decrypt to get context
+                    }
+                    
+                    val matchedPage = getPageForIndex(origIdx, prepared.pageMap)
+                    val subBook = getSubBookForPage(matchedPage, subBooks)
 
                     results.add(
                         SearchResult(
                             granthaName = granthaName,
-                            page = pageNum,
-                            contextText = "...$cleanContext...",
-                            subBook = subBook
+                            page = matchedPage,
+                            contextText = if (cleanContext == "MATCH_FOUND_WITHOUT_TEXT") cleanContext else "...$cleanContext...",
+                            subBook = subBook,
+                            matchOffset = origIdx // Store offset for lazy context extraction
                         )
                     )
                 }
@@ -374,16 +388,23 @@ object SearchEngine {
                         val contextStart = max(0, origIdx - 100)
                         val origEnd = prepared.mapper.getOriginalIndex(i + winSize - 1)
                         val contextEnd = min(textContent.length, origEnd + 100)
-                        val rawContext = textContent.substring(contextStart, contextEnd)
-                        val cleanContext = rawContext.replace(PAGE_PATTERN, " ").replace(Regex("\\s+"), " ").trim()
+                        
+                        val cleanContext = if (textContent.isNotEmpty()) {
+                            val rawContext = textContent.substring(contextStart, contextEnd)
+                            rawContext.replace(PAGE_PATTERN, " ").replace(Regex("\\s+"), " ").trim()
+                        } else {
+                            "MATCH_FOUND_WITHOUT_TEXT"
+                        }
+                        
                         val subBook = getSubBookForPage(pageNum, subBooks)
 
                         results.add(
                             SearchResult(
                                 granthaName = granthaName,
                                 page = pageNum,
-                                contextText = "...$cleanContext...",
-                                subBook = subBook
+                                contextText = if (cleanContext == "MATCH_FOUND_WITHOUT_TEXT") cleanContext else "...$cleanContext...",
+                                subBook = subBook,
+                                matchOffset = origIdx
                             )
                         )
                         if (maxResults > 0 && results.size >= maxResults) return results
@@ -435,11 +456,20 @@ object SearchEngine {
                         } else {
                             smartSearchInternal(prepared, textContent, q, granthaName, subBooks, customRules, if (stopAtFirstMatch) 1 else maxPerBook)
                         }
-                        if (matches.isEmpty()) { hasAll = false; break }
+                        if (matches.isEmpty()) { 
+                            hasAll = false
+                            break 
+                        }
                         allQueryResults.addAll(matches)
-                        if (stopAtFirstMatch) break
                     }
-                    if (hasAll) allResults.addAll(allQueryResults.sortedBy { it.page })
+                    if (hasAll) {
+                        if (stopAtFirstMatch) {
+                            // If we only want one result, just take the first one found
+                            allResults.add(allQueryResults.first())
+                        } else {
+                            allResults.addAll(allQueryResults.sortedBy { it.page })
+                        }
+                    }
                 } else {
                     for (q in textQueries) {
                         val matches = if (fuzzyPct > 0) {
