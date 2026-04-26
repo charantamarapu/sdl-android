@@ -461,12 +461,12 @@ fun SearchScreen(
             }
 
             // Results header
-            if (uiState.hasSearched && !uiState.isSearching) {
+            val resultCount = if (uiState.isAdvancedMode) uiState.results.size else uiState.basicResults.size
+            if (resultCount > 0 || (uiState.hasSearched && !uiState.isSearching)) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                 ) {
-                    val count = if (uiState.isAdvancedMode) uiState.results.size else uiState.basicResults.size
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -475,7 +475,7 @@ fun SearchScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "$count ${if (uiState.isAdvancedMode) "matches" else "books"} found",
+                            "$resultCount ${if (uiState.isAdvancedMode) "matches" else "books"} found",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Medium
                         )
