@@ -39,8 +39,24 @@ class GranthaRepository @Inject constructor(
             val existingList = dao.getAllGranthasOnce()
             val existingMap = existingList.associateBy { it.name }
 
+            // Find and delete physical files for books that are no longer on the server
+            val staleGranthas = existingList.filter { it.name !in serverNames }
+            staleGranthas.forEach { stale ->
+                stale.filePath?.let { path ->
+                    val file = File(path)
+                    if (file.exists()) file.delete()
+                }
+            }
+
             // Delete books that are no longer on the server
             dao.deleteStaleGranthas(serverNames)
+
+            // Clean up any remaining orphaned files (e.g. from previous bugs)
+            val validFilePaths = existingList
+                .filter { it.name in serverNames }
+                .mapNotNull { it.filePath }
+                .toSet()
+            downloadManager.cleanupOrphanedFiles(validFilePaths)
 
             // Upsert: merge server metadata with local download state
             val entities = serverGranthas.map { item ->

@@ -186,6 +186,18 @@ class GranthaDownloadManager(
         // DAO will be updated by the repository
     }
 
+    /**
+     * Clean up any physical files that are not referenced in the validPaths list.
+     */
+    suspend fun cleanupOrphanedFiles(validPaths: Set<String>) = withContext(Dispatchers.IO) {
+        val dir = getGranthasDir()
+        dir.listFiles()?.forEach { file ->
+            if (file.absolutePath !in validPaths) {
+                file.delete()
+            }
+        }
+    }
+
     fun cancelDownloads() {
         _isCancelled = true
         // Mark progress as complete/error so UI resets immediately
