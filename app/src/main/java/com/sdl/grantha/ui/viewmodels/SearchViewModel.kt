@@ -216,6 +216,7 @@ class SearchViewModel @Inject constructor(
     private fun executeBasicSearch(query: String) {
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
             _uiState.update { 
                 it.copy(
                     isSearching = true, 
@@ -247,6 +248,9 @@ class SearchViewModel @Inject constructor(
                         results = emptyList() // Clear OCR results if any
                     ) 
                 }
+                val duration = System.currentTimeMillis() - startTime
+                val seconds = duration / 1000.0
+                android.widget.Toast.makeText(application, "Basic search took ${String.format("%.1f", seconds)}s", android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Ignore cancellation
                 throw e
@@ -271,6 +275,7 @@ class SearchViewModel @Inject constructor(
 
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
             _uiState.update { 
                 it.copy(
                     isSearching = true, 
@@ -392,6 +397,9 @@ class SearchViewModel @Inject constructor(
                         searchProgress = 1f
                     )
                 }
+                val duration = System.currentTimeMillis() - startTime
+                val seconds = duration / 1000.0
+                android.widget.Toast.makeText(application, "Advanced search took ${String.format("%.1f", seconds)}s", android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Ignore
                 throw e

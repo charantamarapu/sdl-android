@@ -1,136 +1,77 @@
 package com.sdl.grantha.data.crypto
 
-import com.sdl.grantha.BuildConfig
 import org.json.JSONObject
 import java.io.File
-import java.nio.ByteBuffer
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 /**
- * Manages encryption/decryption of .sdl grantha files.
+ * Manages storage and retrieval of .sdl grantha files.
+ * Uses modern Gzip compression (v2).
  *
- * SDL File Format:
- *   [4 bytes] Magic: "SDL\x01"
- *   [12 bytes] AES-GCM IV
- *   [4 bytes] Metadata length (big-endian uint32)
- *   [N bytes] Encrypted metadata JSON (with 16-byte GCM tag appended)
- *   [remaining] Encrypted text content (with 16-byte GCM tag appended)
+ * SDL File Format (v2 - Gzip):
+ *   [4 bytes] Magic: "SDL\x02"
+ *   [remaining] Gzipped UTF-8 text content
  */
 class SdlCryptoManager {
 
     companion object {
         private const val MAGIC = "SDL"
-        private const val MAGIC_VERSION: Byte = 0x01
-        private const val IV_LENGTH = 12
-        private const val GCM_TAG_LENGTH_BITS = 128
-        private const val HEADER_SIZE = 4 + IV_LENGTH + 4 // magic(4) + iv(12) + metaLen(4) = 20
-
-        private val KEY: ByteArray by lazy {
-            hexToBytes(BuildConfig.SDL_KEY)
-        }
-
-        private fun hexToBytes(hex: String): ByteArray {
-            val cleanHex = if (hex.length % 2 != 0) hex + "0" else hex
-            val len = cleanHex.length
-            val data = ByteArray(len / 2)
-            try {
-                for (i in 0 until len step 2) {
-                    data[i / 2] = ((Character.digit(cleanHex[i], 16) shl 4) +
-                            Character.digit(cleanHex[i + 1], 16)).toByte()
-                }
-            } catch (e: Exception) {
-                // Safe fallback to prevent app crash
-                return ByteArray(32)
-            }
-            return data
-        }
+        private const val VERSION_GZIP: Byte = 0x02
     }
 
     /**
-     * Decrypt metadata JSON from an .sdl file.
-     * Returns a JSONObject with fields: name, tags, source_url, books
+     * Get basic metadata from an .sdl file.
      */
     fun decryptMetadata(sdlFile: File): JSONObject {
-        val data = sdlFile.readBytes()
-        validateMagic(data)
-
-        val iv = data.copyOfRange(4, 4 + IV_LENGTH)
-        val metaLen = ByteBuffer.wrap(data, 4 + IV_LENGTH, 4).int
-
-        val encryptedMeta = data.copyOfRange(HEADER_SIZE, HEADER_SIZE + metaLen)
-        val decryptedMeta = decryptBlock(iv, encryptedMeta, "sdl-meta".toByteArray())
-
-        return JSONObject(String(decryptedMeta, Charsets.UTF_8))
+        // v2 doesn't pack metadata in the file (it's in the DB)
+        return JSONObject().put("name", sdlFile.nameWithoutExtension)
     }
 
     /**
-     * Decrypt the text content from an .sdl file.
-     * Returns the full OCR text with page markers {[(N)]}.
+     * Get the text content from a Gzipped .sdl file (v2).
      */
     fun decryptText(sdlFile: File): String {
-        return java.io.FileInputStream(sdlFile).use { fis ->
+        return sdlFile.inputStream().use { fis ->
             val magic = ByteArray(4)
             fis.read(magic)
-            if (String(magic, 0, 3, Charsets.US_ASCII) != MAGIC || magic[3] != MAGIC_VERSION) {
-                throw IllegalArgumentException("Invalid SDL file magic")
+            
+            if (String(magic, 0, 3, Charsets.US_ASCII) != MAGIC || magic[3] != VERSION_GZIP) {
+                throw IllegalArgumentException("Invalid or unsupported SDL file version")
             }
 
-            val iv = ByteArray(IV_LENGTH)
-            fis.read(iv)
+            // Decompress Gzip content
+            GZIPInputStream(fis).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }
+    }
 
-            val metaLenBytes = ByteArray(4)
-            fis.read(metaLenBytes)
-            val metaLen = ByteBuffer.wrap(metaLenBytes).int
-
-            // Skip metadata
-            fis.skip(metaLen.toLong())
-
-            // Decrypt text in one go (GCM requires the full ciphertext for the tag check at the end)
-            // But we can at least avoid readBytes() overhead
-            val remaining = (sdlFile.length() - fis.channel.position()).toInt()
-            val ciphertext = ByteArray(remaining)
-            fis.read(ciphertext)
+    /**
+     * Helper to save a text as a Gzipped .sdl file (v2).
+     */
+    fun saveAsGzippedSdl(text: String, outputFile: File) {
+        outputFile.outputStream().use { fos ->
+            // Write Header: SDL + Version 0x02
+            fos.write(MAGIC.toByteArray(Charsets.US_ASCII))
+            fos.write(VERSION_GZIP.toInt())
             
-            val decryptedText = decryptBlock(iv, ciphertext, "sdl-text".toByteArray())
-            String(decryptedText, Charsets.UTF_8)
+            // Write Gzipped content
+            GZIPOutputStream(fos).use { gzos ->
+                gzos.write(text.toByteArray(Charsets.UTF_8))
+            }
         }
     }
 
     /**
-     * Validate that the file starts with the SDL magic header.
-     */
-    private fun validateMagic(data: ByteArray) {
-        require(data.size >= HEADER_SIZE) { "File too small to be a valid SDL file" }
-        val magic = String(data, 0, 3, Charsets.US_ASCII)
-        require(magic == MAGIC && data[3] == MAGIC_VERSION) {
-            "Invalid SDL file: wrong magic header"
-        }
-    }
-
-    /**
-     * Decrypt a single AES-256-GCM block.
-     */
-    private fun decryptBlock(iv: ByteArray, ciphertext: ByteArray, aad: ByteArray): ByteArray {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val keySpec = SecretKeySpec(KEY, "AES")
-        val gcmSpec = GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv)
-        cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec)
-        cipher.updateAAD(aad)
-        return cipher.doFinal(ciphertext)
-    }
-
-    /**
-     * Check if a file is a valid SDL file (quick header check only).
+     * Check if a file is a valid SDL v2 file.
      */
     fun isValidSdlFile(file: File): Boolean {
-        if (!file.exists() || file.length() < HEADER_SIZE) return false
+        if (!file.exists() || file.length() < 4) return false
         return try {
             val header = ByteArray(4)
             file.inputStream().use { it.read(header) }
             val magic = String(header, 0, 3, Charsets.US_ASCII)
-            magic == MAGIC && header[3] == MAGIC_VERSION
+            val version = header[3]
+            magic == MAGIC && version == VERSION_GZIP
         } catch (e: Exception) {
             false
         }

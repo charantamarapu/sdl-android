@@ -258,8 +258,11 @@ class GranthaRepository @Inject constructor(
             backupDir.listFiles()?.forEach { file ->
                 // Look for .sdl files directly in the backup folder
                 if (file.extension == "sdl") {
-                    file.copyTo(File(granthasDir, file.name), overwrite = true)
-                    restoreCount++
+                    // Simply copy valid .sdl files (new Gzip format only)
+                    if (cryptoManager.isValidSdlFile(file)) {
+                        file.copyTo(File(granthasDir, file.name), overwrite = true)
+                        restoreCount++
+                    }
                 }
             }
 
