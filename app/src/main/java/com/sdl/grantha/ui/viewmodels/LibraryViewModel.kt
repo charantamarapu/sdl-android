@@ -140,15 +140,18 @@ class LibraryViewModel @Inject constructor(
 
     fun syncCatalog(silent: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSyncing = true, error = null, syncMessage = null) }
+            _uiState.update { it.copy(
+                isSyncing = true, 
+                error = null, 
+                syncMessage = if (silent) it.syncMessage else null
+            ) }
             val result = repository.syncCatalog()
             result.fold(
                 onSuccess = { count ->
                     _uiState.update { it.copy(
                         isSyncing = false, 
-                        syncMessage = if (silent) null else "Library synced: $count books found"
+                        syncMessage = if (silent) it.syncMessage else "Library synced: $count books found"
                     ) }
-                    refreshCounts()
                 },
                 onFailure = { e ->
                     _uiState.update { it.copy(
@@ -318,7 +321,7 @@ class LibraryViewModel @Inject constructor(
     fun deleteAllDownloads() {
         viewModelScope.launch {
             repository.deleteAllDownloads()
-            refreshCounts()
+            _uiState.update { it.copy(syncMessage = "All downloads deleted successfully") }
         }
     }
 
