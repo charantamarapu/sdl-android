@@ -18,6 +18,9 @@ interface GranthaDao {
     @Query("SELECT * FROM granthas WHERE isDownloaded = 1 ORDER BY name ASC")
     fun getDownloadedGranthas(): Flow<List<GranthaEntity>>
 
+    @Query("SELECT * FROM granthas WHERE isDownloaded = 1")
+    suspend fun getDownloadedGranthasOnce(): List<GranthaEntity>
+
     @Query("SELECT * FROM granthas WHERE name = :name LIMIT 1")
     suspend fun getGranthaByName(name: String): GranthaEntity?
 
@@ -52,6 +55,15 @@ interface GranthaDao {
     suspend fun deleteStaleGranthas(serverNames: List<String>)
 
     @Query("SELECT COUNT(*) FROM granthas")
+    fun getTotalCountFlow(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM granthas WHERE isDownloaded = 1")
+    fun getDownloadedCountFlow(): Flow<Int>
+
+    @Query("SELECT SUM(sizeBytes) FROM granthas WHERE isDownloaded = 1")
+    fun getDownloadedSizeBytesFlow(): Flow<Long?>
+
+    @Query("SELECT COUNT(*) FROM granthas")
     suspend fun getTotalCount(): Int
 
     @Query("SELECT COUNT(*) FROM granthas WHERE isDownloaded = 1")
@@ -59,6 +71,9 @@ interface GranthaDao {
 
     @Query("SELECT SUM(sizeBytes) FROM granthas WHERE isDownloaded = 1")
     suspend fun getDownloadedSizeBytes(): Long?
+
+    @Query("SELECT DISTINCT tags FROM granthas WHERE tags != ''")
+    suspend fun getAllTags(): List<String>
 
     @Query("SELECT DISTINCT tags FROM granthas WHERE isDownloaded = 1 AND tags != ''")
     suspend fun getAllDownloadedTags(): List<String>

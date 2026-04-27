@@ -189,13 +189,17 @@ class GranthaDownloadManager(
     /**
      * Clean up any physical files that are not referenced in the validPaths list.
      */
-    suspend fun cleanupOrphanedFiles(validPaths: Set<String>) = withContext(Dispatchers.IO) {
+    suspend fun cleanupOrphanedFiles(validPaths: Set<String>): Int = withContext(Dispatchers.IO) {
         val dir = getGranthasDir()
+        var deletedCount = 0
         dir.listFiles()?.forEach { file ->
             if (file.absolutePath !in validPaths) {
-                file.delete()
+                if (file.delete()) {
+                    deletedCount++
+                }
             }
         }
+        deletedCount
     }
 
     fun cancelDownloads() {

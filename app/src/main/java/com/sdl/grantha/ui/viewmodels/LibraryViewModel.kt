@@ -14,6 +14,11 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class BulkDownloadState(
+    val names: List<String>,
+    val totalSizeMb: String
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
@@ -37,11 +42,19 @@ class LibraryViewModel @Inject constructor(
         val totalCount: Int = 0,
         val downloadedCount: Int = 0,
         val downloadedSizeMb: String = "0",
-        val syncMessage: String? = null
+        val syncMessage: String? = null,
+        val isBackingUp: Boolean = false,
+        val isRestoring: Boolean = false,
+        val isHealthChecking: Boolean = false,
+        val anyDownloadedSelected: Boolean = false,
+        val anyNotDownloadedSelected: Boolean = false
     )
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+    private val _bulkDownloadConfirm = MutableStateFlow<BulkDownloadState?>(null)
+    val bulkDownloadConfirm: StateFlow<BulkDownloadState?> = _bulkDownloadConfirm.asStateFlow()
 
     // Grantha list — reactive to search, sort and filter changes
     val granthas: StateFlow<List<GranthaEntity>> = combine(
@@ -82,17 +95,46 @@ class LibraryViewModel @Inject constructor(
     val downloadProgress = repository.getDownloadProgress()
     val bulkProgress = repository.getBulkProgress()
 
-    init {
-        refreshCounts()
-
-        // Update counts during bulk downloads
-        viewModelScope.launch {
-            bulkProgress
-                .map { it?.currentIndex }
-                .distinctUntilChanged()
-                .collect { 
-                    refreshCounts()
+    // Suggestions
+    val suggestions: StateFlow<List<String>> = _uiState.map { it.searchQuery }
+        .distinctUntilChanged()
+        .flatMapLatest { query ->
+            flow {
+                val allTags = repository.getAllTags()
+                if (query.isBlank()) {
+                    emit(allTags.take(15))
+                } else {
+                    val filtered = allTags.filter { it.contains(query, ignoreCase = true) }
+                    emit(filtered.take(15))
                 }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    companion object {
+        private var hasAutoSynced = false
+    }
+
+    init {
+        // Observe library stats reactively
+        repository.getTotalCountFlow()
+            .onEach { count -> _uiState.update { it.copy(totalCount = count) } }
+            .launchIn(viewModelScope)
+
+        repository.getDownloadedCountFlow()
+            .onEach { count -> _uiState.update { it.copy(downloadedCount = count) } }
+            .launchIn(viewModelScope)
+
+        repository.getDownloadedSizeBytesFlow()
+            .onEach { bytes -> 
+                val sizeMb = String.format("%.1f", bytes / (1024.0 * 1024.0))
+                _uiState.update { it.copy(downloadedSizeMb = sizeMb) } 
+            }
+            .launchIn(viewModelScope)
+
+        // Sync catalog automatically ONCE when the app/viewmodel starts for the first time
+        if (!hasAutoSynced) {
+            syncCatalog(silent = false)
+            hasAutoSynced = true
         }
     }
 
@@ -131,7 +173,17 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun toggleDownloadedOnly() {
-        _uiState.update { it.copy(showDownloadedOnly = !it.showDownloadedOnly) }
+        _uiState.update { 
+            val newValue = !it.showDownloadedOnly
+            it.copy(
+                showDownloadedOnly = newValue,
+                syncMessage = if (newValue) "Showing downloaded books only" else "Showing all books"
+            )
+        }
+    }
+
+    fun showSelectionInfo() {
+        _uiState.update { it.copy(syncMessage = "Long press a book to select multiple items for bulk operations.") }
     }
 
     fun setSearchQuery(query: String) {
@@ -147,28 +199,89 @@ class LibraryViewModel @Inject constructor(
                 isSelectionMode = newSelection.isNotEmpty()
             )
         }
+        updateSelectionFlags()
     }
 
     fun selectAll(names: List<String>) {
         _uiState.update { it.copy(selectedGranthas = names.toSet(), isSelectionMode = true) }
+        updateSelectionFlags()
     }
 
     fun clearSelection() {
         _uiState.update { it.copy(selectedGranthas = emptySet(), isSelectionMode = false) }
+        updateSelectionFlags()
+    }
+
+    private fun updateSelectionFlags() {
+        viewModelScope.launch {
+            val selectedNames = _uiState.value.selectedGranthas
+            if (selectedNames.isEmpty()) {
+                _uiState.update { it.copy(anyDownloadedSelected = false, anyNotDownloadedSelected = false) }
+                return@launch
+            }
+            val all = repository.getAllGranthasOnce()
+            val selected = all.filter { it.name in selectedNames }
+            _uiState.update { 
+                it.copy(
+                    anyDownloadedSelected = selected.any { g -> g.isDownloaded },
+                    anyNotDownloadedSelected = selected.any { g -> !g.isDownloaded }
+                )
+            }
+        }
     }
 
     fun downloadSelected() {
-        val names = _uiState.value.selectedGranthas.toList()
-        if (names.isEmpty()) return
-
-        // Start foreground service for bulk download
-        val context = getApplication<Application>()
-        val intent = Intent(context, DownloadService::class.java).apply {
-            action = DownloadService.ACTION_DOWNLOAD
-            putStringArrayListExtra(DownloadService.EXTRA_GRANTHA_NAMES, ArrayList(names))
+        viewModelScope.launch {
+            val selectedNames = _uiState.value.selectedGranthas
+            val all = repository.getAllGranthasOnce()
+            val toDownload = all.filter { it.name in selectedNames && !it.isDownloaded }.map { it.name }
+            prepareBulkDownload(toDownload)
+            clearSelection()
         }
-        context.startForegroundService(intent)
-        clearSelection()
+    }
+
+    fun deleteSelected() {
+        viewModelScope.launch {
+            val selectedNames = _uiState.value.selectedGranthas
+            val all = repository.getAllGranthasOnce()
+            val toDelete = all.filter { it.name in selectedNames && it.isDownloaded }.map { it.name }
+            toDelete.forEach { repository.deleteGrantha(it) }
+            refreshCounts()
+            clearSelection()
+        }
+    }
+
+    fun prepareBulkDownload(names: List<String>) {
+        if (names.isEmpty()) return
+        viewModelScope.launch {
+            val size = calculateTotalSizeMb(names)
+            _bulkDownloadConfirm.value = BulkDownloadState(names, size)
+        }
+    }
+
+    fun dismissBulkDownload() {
+        _bulkDownloadConfirm.value = null
+    }
+
+    fun downloadMultiple(names: List<String>) {
+        if (names.isEmpty()) return
+        
+        viewModelScope.launch {
+            val context = getApplication<Application>()
+            val intent = Intent(context, DownloadService::class.java).apply {
+                action = DownloadService.ACTION_DOWNLOAD
+                putStringArrayListExtra(DownloadService.EXTRA_GRANTHA_NAMES, ArrayList(names))
+            }
+            context.startForegroundService(intent)
+            dismissBulkDownload()
+        }
+    }
+
+    suspend fun calculateTotalSizeMb(names: List<String>): String {
+        val all = repository.getAllGranthasOnce()
+        val target = all.filter { it.name in names }
+        val totalBytes = target.sumOf { it.sizeBytes }
+        return "%.2f".format(totalBytes / (1024.0 * 1024.0))
     }
 
     fun downloadSingle(name: String) {
@@ -188,15 +301,9 @@ class LibraryViewModel @Inject constructor(
 
     fun downloadAll() {
         viewModelScope.launch {
-            val allGranthas = granthas.value.filter { !it.isDownloaded }.map { it.name }
-            if (allGranthas.isEmpty()) return@launch
-
-            val context = getApplication<Application>()
-            val intent = Intent(context, DownloadService::class.java).apply {
-                action = DownloadService.ACTION_DOWNLOAD
-                putStringArrayListExtra(DownloadService.EXTRA_GRANTHA_NAMES, ArrayList(allGranthas))
-            }
-            context.startForegroundService(intent)
+            val all = repository.getAllGranthasOnce()
+            val names = all.filter { !it.isDownloaded }.map { it.name }
+            prepareBulkDownload(names)
         }
     }
 
@@ -215,6 +322,59 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    fun runHealthCheck() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSyncing = true, isHealthChecking = true, syncMessage = "Running health check...") }
+            val result = repository.libraryHealthCheck()
+            result.fold(
+                onSuccess = { health ->
+                    val msg = if (health.totalFixed == 0) {
+                        "Health check complete. No issues found."
+                    } else {
+                        "Health check complete. Fixed ${health.missingFilesFixed} missing entries and removed ${health.orphanedFilesDeleted} orphaned files."
+                    }
+                    _uiState.update { it.copy(isSyncing = false, isHealthChecking = false, syncMessage = msg) }
+                    syncCatalog(silent = true)
+                },
+                onFailure = { e ->
+                    _uiState.update { it.copy(isSyncing = false, isHealthChecking = false, error = "Health check failed: ${e.message}") }
+                }
+            )
+        }
+    }
+
+    fun backupLibrary() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSyncing = true, isBackingUp = true, syncMessage = "Backing up...") }
+            val result = repository.backupLibrary()
+            result.fold(
+                onSuccess = { _ ->
+                    _uiState.update { it.copy(isSyncing = false, isBackingUp = false, syncMessage = "Backup successful to SDL_Backup folder") }
+                    syncCatalog(silent = true)
+                },
+                onFailure = { e ->
+                    _uiState.update { it.copy(isSyncing = false, isBackingUp = false, error = "Backup failed: ${e.message}") }
+                }
+            )
+        }
+    }
+
+    fun restoreLibrary() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSyncing = true, isRestoring = true, syncMessage = "Restoring...") }
+            val result = repository.restoreLibrary()
+            result.fold(
+                onSuccess = { count ->
+                    _uiState.update { it.copy(isSyncing = false, isRestoring = false, syncMessage = "Restore successful. $count books recovered.") }
+                    syncCatalog(silent = true)
+                },
+                onFailure = { e ->
+                    _uiState.update { it.copy(isSyncing = false, isRestoring = false, error = "Restore failed: ${e.message}") }
+                }
+            )
+        }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }
@@ -224,19 +384,6 @@ class LibraryViewModel @Inject constructor(
     }
 
     private fun refreshCounts() {
-        viewModelScope.launch {
-            val total = repository.getTotalCount()
-            val downloaded = repository.getDownloadedCount()
-            val sizeBytes = repository.getDownloadedSizeBytes()
-            val sizeMb = String.format("%.1f", sizeBytes / (1024.0 * 1024.0))
-            
-            _uiState.update { 
-                it.copy(
-                    totalCount = total, 
-                    downloadedCount = downloaded, 
-                    downloadedSizeMb = sizeMb
-                ) 
-            }
-        }
+        // Now handled reactively by init flows
     }
 }

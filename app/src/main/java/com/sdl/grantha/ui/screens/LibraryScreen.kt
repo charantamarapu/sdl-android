@@ -3,6 +3,7 @@ package com.sdl.grantha.ui.screens
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sdl.grantha.ui.components.DownloadProgressBar
@@ -36,10 +38,6 @@ fun LibraryScreen(
     val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle(initialValue = null)
     val bulkProgress by viewModel.bulkProgress.collectAsStateWithLifecycle(initialValue = null)
 
-    // Automatic catalog sync on entry
-    LaunchedEffect(Unit) {
-        viewModel.syncCatalog(silent = true)
-    }
 
     // Show download errors
     LaunchedEffect(downloadProgress?.error) {
@@ -78,11 +76,14 @@ fun LibraryScreen(
                     }
                     
                     Row {
+                        // Info action
+                        IconButton(onClick = { viewModel.showSelectionInfo() }) {
+                            Icon(Icons.Filled.Info, contentDescription = "Selection Info")
+                        }
                         // Toggle downloaded only
                         IconButton(onClick = { viewModel.toggleDownloadedOnly() }) {
                             Icon(
-                                if (uiState.showDownloadedOnly) Icons.Filled.FilterAlt
-                                else Icons.Outlined.FilterAlt,
+                                if (uiState.showDownloadedOnly) Icons.Filled.FilterList else Icons.Outlined.FilterList,
                                 contentDescription = "Filter downloaded",
                                 tint = if (uiState.showDownloadedOnly) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -112,6 +113,11 @@ fun LibraryScreen(
             val isDownloading = (bulkProgress != null && !bulkProgress!!.isComplete) ||
                     (downloadProgress != null && !downloadProgress!!.isComplete && downloadProgress!!.error == null)
             
+            val visibleNotDownloaded = granthas.filter { !it.isDownloaded }.map { it.name }
+            val allNotDownloadedCount = uiState.totalCount - uiState.downloadedCount
+
+            val isFiltered = uiState.searchQuery.isNotBlank() || uiState.showDownloadedOnly
+            
             if (isDownloading) {
                 ExtendedFloatingActionButton(
                     onClick = { viewModel.cancelDownloads() },
@@ -121,19 +127,25 @@ fun LibraryScreen(
                     contentColor = MaterialTheme.colorScheme.onErrorContainer
                 )
             } else if (uiState.isSelectionMode) {
+                // Actions are in the top toolbar now
+            } else if (isFiltered) {
+                // Only show download button for the filtered results if there's something to download
+                if (visibleNotDownloaded.isNotEmpty()) {
+                    ExtendedFloatingActionButton(
+                        onClick = { viewModel.prepareBulkDownload(visibleNotDownloaded) },
+                        icon = { Icon(Icons.Filled.CloudDownload, contentDescription = null) },
+                        text = { Text("Download ${visibleNotDownloaded.size} Filtered") },
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else if (allNotDownloadedCount > 0) {
+                // Only show "Download All" when not filtering
                 ExtendedFloatingActionButton(
-                    onClick = { viewModel.downloadSelected() },
-                    icon = { Icon(Icons.Filled.Download, contentDescription = null) },
-                    text = { Text("Download ${uiState.selectedGranthas.size}") },
+                    onClick = { viewModel.downloadAll() },
+                    icon = { Icon(Icons.Filled.CloudDownload, contentDescription = null) },
+                    text = { Text("Download All ($allNotDownloadedCount)") },
                     containerColor = MaterialTheme.colorScheme.primary
                 )
-            } else if (uiState.downloadedCount < uiState.totalCount) {
-                FloatingActionButton(
-                    onClick = { viewModel.downloadAll() },
-                    containerColor = MaterialTheme.colorScheme.primary
-                ) {
-                    Icon(Icons.Filled.CloudDownload, contentDescription = "Download All")
-                }
             }
         }
     ) { padding ->
@@ -142,37 +154,67 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Search bar
-            OutlinedTextField(
-                value = uiState.searchQuery,
-                onValueChange = { viewModel.setSearchQuery(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Search by bookname or tag...") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (uiState.searchQuery.isNotBlank()) {
-                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                            Icon(Icons.Filled.Clear, contentDescription = "Clear")
+            // Search bar & Suggestions
+            var showSuggestions by remember { mutableStateOf(false) }
+            val suggestions by viewModel.suggestions.collectAsStateWithLifecycle()
+
+            // Reactive expansion: Show suggestions only when there is a query and matching results
+            LaunchedEffect(suggestions, uiState.searchQuery) {
+                showSuggestions = uiState.searchQuery.isNotBlank() && suggestions.isNotEmpty()
+            }
+
+            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                OutlinedTextField(
+                    value = uiState.searchQuery,
+                    onValueChange = { 
+                        viewModel.setSearchQuery(it)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Search by bookname or tag...") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (uiState.searchQuery.isNotBlank()) {
+                            IconButton(onClick = { 
+                                viewModel.setSearchQuery("") 
+                                showSuggestions = false
+                            }) {
+                                Icon(Icons.Filled.Clear, contentDescription = "Clear")
+                            }
                         }
+                    },
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium
+                )
+
+                DropdownMenu(
+                    expanded = showSuggestions,
+                    onDismissRequest = { showSuggestions = false },
+                    properties = PopupProperties(focusable = false),
+                    modifier = Modifier.fillMaxWidth(0.85f)
+                ) {
+                    suggestions.forEach { tag ->
+                        DropdownMenuItem(
+                            text = { Text(tag) },
+                            onClick = {
+                                viewModel.setSearchQuery(tag)
+                                showSuggestions = false
+                            }
+                        )
                     }
-                },
-                singleLine = true,
-                shape = MaterialTheme.shapes.medium
-            )
+                }
+            }
 
             // Sort Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Sort Menu
                 var showSortMenu by remember { mutableStateOf(false) }
-                Box(modifier = Modifier.weight(1f)) {
+                Box(modifier = Modifier.wrapContentSize()) {
                     FilterChip(
                         selected = true,
                         onClick = { showSortMenu = true },
@@ -205,6 +247,17 @@ fun LibraryScreen(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
+
+                // Selection count at the absolute right
+                if (uiState.selectedGranthas.isNotEmpty()) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        "${uiState.selectedGranthas.size} selected",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             // Selection mode toolbar
@@ -217,17 +270,46 @@ fun LibraryScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "${uiState.selectedGranthas.size} selected",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Medium
-                        )
                         Row {
+                            if (uiState.anyNotDownloadedSelected) {
+                                TextButton(onClick = { viewModel.downloadSelected() }) {
+                                    Text("Download")
+                                }
+                            }
+                            if (uiState.anyDownloadedSelected) {
+                                var showDeleteConfirm by remember { mutableStateOf(false) }
+                                TextButton(
+                                    onClick = { showDeleteConfirm = true },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text("Delete")
+                                }
+
+                                if (showDeleteConfirm) {
+                                    AlertDialog(
+                                        onDismissRequest = { showDeleteConfirm = false },
+                                        title = { Text("Delete Selected?") },
+                                        text = { Text("Are you sure you want to delete the selected downloaded books?") },
+                                        confirmButton = {
+                                            TextButton(
+                                                onClick = {
+                                                    viewModel.deleteSelected()
+                                                    showDeleteConfirm = false
+                                                },
+                                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                            ) { Text("Delete") }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+                                        }
+                                    )
+                                }
+                            }
                             TextButton(onClick = {
-                                viewModel.selectAll(granthas.filter { !it.isDownloaded }.map { it.name })
+                                viewModel.selectAll(granthas.map { it.name })
                             }) {
                                 Text("Select All")
                             }
@@ -323,36 +405,82 @@ fun LibraryScreen(
                     }
                 }
             } else {
-                // Grantha list
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(
-                        items = granthas,
-                        key = { it.name }
-                    ) { grantha ->
-                        GranthaCard(
-                            grantha = grantha,
-                            isSelected = grantha.name in uiState.selectedGranthas,
-                            isSelectionMode = uiState.isSelectionMode,
-                            onClick = {
-                                if (uiState.isSelectionMode) {
-                                    viewModel.toggleSelection(grantha.name)
-                                } else {
-                                    onNavigateToReader(grantha.name, 1)
+                    // Grantha list
+                    var bookToDelete by remember { mutableStateOf<String?>(null) }
+                    
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(
+                            items = granthas,
+                            key = { it.name }
+                        ) { grantha ->
+                            GranthaCard(
+                                grantha = grantha,
+                                isSelected = grantha.name in uiState.selectedGranthas,
+                                isSelectionMode = uiState.isSelectionMode,
+                                onClick = {
+                                    if (uiState.isSelectionMode) {
+                                        viewModel.toggleSelection(grantha.name)
+                                    } else {
+                                        onNavigateToReader(grantha.name, 1)
+                                    }
+                                },
+                                onLongClick = { viewModel.toggleSelection(grantha.name) },
+                                onDownloadClick = { viewModel.downloadSingle(grantha.name) },
+                                onDeleteClick = { bookToDelete = grantha.name }
+                            )
+                        }
+
+                        // Bottom spacer for FAB
+                        item { Spacer(modifier = Modifier.height(80.dp)) }
+                    }
+
+                    if (bookToDelete != null) {
+                        AlertDialog(
+                            onDismissRequest = { bookToDelete = null },
+                            title = { Text("Delete Book?") },
+                            text = { Text("Are you sure you want to delete '${bookToDelete}'? You will need to download it again for offline access.") },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        bookToDelete?.let { viewModel.deleteGrantha(it) }
+                                        bookToDelete = null
+                                    },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text("Delete")
                                 }
                             },
-                            onLongClick = { viewModel.toggleSelection(grantha.name) },
-                            onDownloadClick = { viewModel.downloadSingle(grantha.name) },
-                            onDeleteClick = { viewModel.deleteGrantha(grantha.name) }
+                            dismissButton = {
+                                TextButton(onClick = { bookToDelete = null }) {
+                                    Text("Cancel")
+                                }
+                            }
                         )
                     }
 
-                    // Bottom spacer for FAB
-                    item { Spacer(modifier = Modifier.height(80.dp)) }
-                }
+                    // Bulk Download Confirmation Dialog
+                    val bulkConfirm by viewModel.bulkDownloadConfirm.collectAsStateWithLifecycle()
+                    if (bulkConfirm != null) {
+                        AlertDialog(
+                            onDismissRequest = { viewModel.dismissBulkDownload() },
+                            title = { Text("Download Books") },
+                            text = { Text("You are about to download ${bulkConfirm!!.names.size} books.\n\nEstimated Size: ${bulkConfirm!!.totalSizeMb} MB\n\nContinue?") },
+                            confirmButton = {
+                                TextButton(onClick = { viewModel.downloadMultiple(bulkConfirm!!.names) }) {
+                                    Text("Download")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { viewModel.dismissBulkDownload() }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
+                    }
             }
         }
     }

@@ -12,6 +12,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
+import android.net.Uri
+import android.content.Intent
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.sdl.grantha.BuildConfig
 import com.sdl.grantha.ui.viewmodels.LibraryViewModel
 
@@ -20,6 +30,23 @@ import com.sdl.grantha.ui.viewmodels.LibraryViewModel
 fun SettingsScreen(
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var isManager by remember { 
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Environment.isExternalStorageManager()
+            } else true
+        )
+    }
+
+    // Update permission status immediately when returning to the screen
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        isManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else true
+    }
+
     Scaffold(
         // TopAppBar removed as per user request
     ) { padding ->
@@ -69,18 +96,151 @@ fun SettingsScreen(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 )
             ) {
-                var showDialog by remember { mutableStateOf(false) }
+                var showDeleteDialog by remember { mutableStateOf(false) }
                 
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "Storage",
+                        "Storage & Maintenance",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     
+                    // Permissions
                     Button(
-                        onClick = { showDialog = true },
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            } else {
+                                // For older versions, open app settings
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isManager) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(
+                            if (isManager) Icons.Filled.VerifiedUser else Icons.Filled.Security, 
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isManager) "Storage Permission: Granted" else "Grant Storage Permission")
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Health Check
+                    Button(
+                        onClick = { viewModel.runHealthCheck() },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isSyncing
+                    ) {
+                        if (uiState.isHealthChecking) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Icon(Icons.Filled.HealthAndSafety, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Library Health Check")
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Backup
+                    var showBackupDialog by remember { mutableStateOf(false) }
+                    Button(
+                        onClick = { showBackupDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isSyncing && isManager
+                    ) {
+                        if (uiState.isBackingUp) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Icon(Icons.Filled.Backup, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Backup to Downloads")
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Restore
+                    var showRestoreDialog by remember { mutableStateOf(false) }
+                    Button(
+                        onClick = { showRestoreDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isSyncing && isManager
+                    ) {
+                        if (uiState.isRestoring) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Icon(Icons.Filled.SettingsBackupRestore, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Restore from Downloads")
+                        }
+                    }
+
+                    if (!isManager) {
+                        Text(
+                            "⚠️ Storage Permission is required for Backup and Restore features.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+
+                    if (showBackupDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showBackupDialog = false },
+                            title = { Text("Backup Library?") },
+                            text = { Text("This will copy your downloaded books and database to the 'SDL_Backup' folder in your Downloads. Existing backups will be overwritten.") },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    viewModel.backupLibrary()
+                                    showBackupDialog = false
+                                }) { Text("Backup") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showBackupDialog = false }) { Text("Cancel") }
+                            }
+                        )
+                    }
+
+                    if (showRestoreDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showRestoreDialog = false },
+                            title = { Text("Restore Library?") },
+                            text = { Text("This will restore books from the 'SDL_Backup' folder in your Downloads. Local files will be overwritten by backup copies.") },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    viewModel.restoreLibrary()
+                                    showRestoreDialog = false
+                                }) { Text("Restore") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showRestoreDialog = false }) { Text("Cancel") }
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Delete All
+                    Button(
+                        onClick = { showDeleteDialog = true },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer,
                             contentColor = MaterialTheme.colorScheme.onErrorContainer
@@ -93,23 +253,23 @@ fun SettingsScreen(
                     }
                     
                     Text(
-                        "This will free up space by removing all downloaded files from your device. Metadata and search index will remain.",
+                        "Metadata and search index will remain. You can re-download books later.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
 
-                if (showDialog) {
+                if (showDeleteDialog) {
                     AlertDialog(
-                        onDismissRequest = { showDialog = false },
+                        onDismissRequest = { showDeleteDialog = false },
                         title = { Text("Delete All Downloads?") },
                         text = { Text("Are you sure you want to remove all downloaded granthas from your device? You will need to download them again for offline access.") },
                         confirmButton = {
                             TextButton(
                                 onClick = {
                                     viewModel.deleteAllDownloads()
-                                    showDialog = false
+                                    showDeleteDialog = false
                                 },
                                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                             ) {
@@ -117,11 +277,41 @@ fun SettingsScreen(
                             }
                         },
                         dismissButton = {
-                            TextButton(onClick = { showDialog = false }) {
+                            TextButton(onClick = { showDeleteDialog = false }) {
                                 Text("Cancel")
                             }
                         }
                     )
+                }
+            }
+
+            // Sync status message
+            uiState.syncMessage?.let { message ->
+                Snackbar(
+                    modifier = Modifier.padding(top = 8.dp),
+                    action = {
+                        TextButton(onClick = { viewModel.clearSyncMessage() }) {
+                            Text("OK")
+                        }
+                    }
+                ) {
+                    Text(message)
+                }
+            }
+
+            // Error message
+            uiState.error?.let { error ->
+                Snackbar(
+                    modifier = Modifier.padding(top = 8.dp),
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    action = {
+                        TextButton(onClick = { viewModel.clearError() }) {
+                            Text("Dismiss", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                ) {
+                    Text(error)
                 }
             }
 

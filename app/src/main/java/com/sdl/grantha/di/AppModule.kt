@@ -95,8 +95,9 @@ object AppModule {
         api: MobileCatalogApi,
         dao: GranthaDao,
         cryptoManager: SdlCryptoManager,
-        downloadManager: GranthaDownloadManager
+        downloadManager: GranthaDownloadManager,
+        @ApplicationContext context: Context
     ): GranthaRepository {
-        return GranthaRepository(api, dao, cryptoManager, downloadManager)
+        return GranthaRepository(api, dao, cryptoManager, downloadManager, context)
     }
 }
