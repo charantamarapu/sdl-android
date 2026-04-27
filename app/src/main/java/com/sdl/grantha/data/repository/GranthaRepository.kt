@@ -6,11 +6,14 @@ import com.sdl.grantha.data.local.GranthaDao
 import com.sdl.grantha.data.local.GranthaEntity
 import com.sdl.grantha.data.remote.MobileCatalogApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import android.util.Log
 
 /**
  * Repository that coordinates between server API, local database, and encrypted storage.
@@ -149,6 +152,7 @@ class GranthaRepository @Inject constructor(
     /**
      * Get the decrypted text content of a downloaded grantha.
      * Returns null if not downloaded or decryption fails.
+     * Uses timeout to prevent hangs on slow devices.
      */
     suspend fun getGranthaText(name: String): String? = withContext(Dispatchers.IO) {
         val grantha = dao.getGranthaByName(name) ?: return@withContext null
@@ -161,11 +165,24 @@ class GranthaRepository @Inject constructor(
             return@withContext null
         }
 
-        try {
-            cryptoManager.decryptText(file)
-        } catch (e: Throwable) {
+        // Attempt decryption with timeout (60 seconds)
+        // This prevents slow devices from hanging indefinitely
+        val result = try {
+            withTimeoutOrNull(60000L) {
+                cryptoManager.decryptText(file)
+            }
+        } catch (e: TimeoutCancellationException) {
+            Log.w("GranthaRepository", "Decryption timeout for book: $name")
+            null
+        } catch (e: OutOfMemoryError) {
+            Log.e("GranthaRepository", "OutOfMemory while decrypting: $name", e)
+            null
+        } catch (e: Exception) {
+            Log.e("GranthaRepository", "Error decrypting book: $name", e)
             null
         }
+        
+        result
     }
 
     /**

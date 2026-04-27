@@ -327,6 +327,7 @@ class SearchViewModel @Inject constructor(
                                 synchronized(this@SearchViewModel) {
                                     booksProcessed++
                                     val progress = booksProcessed.toFloat() / totalBooks
+                                    android.util.Log.w("SearchViewModel", "Failed to load text for book: ${grantha.name} (Check logs for details)")
                                     _uiState.update { it.copy(searchProgress = progress) }
                                 }
                                 emit(Unit)
