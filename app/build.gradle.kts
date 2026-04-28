@@ -98,6 +98,9 @@ dependencies {
     // Gson
     implementation("com.google.code.gson:gson:2.10.1")
 
+    // Zstandard compression (Use AAR for correct Android JNI extraction)
+    implementation("com.github.luben:zstd-jni:1.5.6-1@aar")
+
     // Coil for image loading (archive.org page images)
     implementation("io.coil-kt:coil-compose:2.5.0")
 
