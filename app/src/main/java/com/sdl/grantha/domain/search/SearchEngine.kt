@@ -237,6 +237,9 @@ object SearchEngine {
      */
     fun smartSearch(
         textContent: String,
+        query: String,
+        granthaName: String = "",
+        subBooks: List<SubBookInfo> = emptyList(),
         customRules: List<Pair<String, String>>? = null,
         maxResults: Int = 0,
         searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS
@@ -286,11 +289,20 @@ object SearchEngine {
                     val prevChar = if (origIdx > 0) textContent[origIdx - 1] else ' '
                     val nextChar = if (origEnd + 1 < textContent.length) textContent[origEnd + 1] else ' '
 
+                    // A boundary is valid if the adjacent character is NOT a "word character".
+                    // For Sanskrit, word characters are Devanagari letters/matras, Roman letters, and digits.
+                    // We explicitly exclude Dandas (।, ॥) and Devanagari digits (०-९) from word characters
+                    // because they commonly follow words as verse/sentence markers.
+                    fun isSanskritWordChar(ch: Char): Boolean {
+                        return (ch in '\u0900'..'\u097F' && ch != '।' && ch != '॥' && ch !in '०'..'९') || 
+                               (ch in 'a'..'z') || (ch in 'A'..'Z') || (ch in '0'..'9')
+                    }
+
                     if (searchMode == SanskritUtils.SanskritSearchMode.EXACT || searchMode == SanskritUtils.SanskritSearchMode.STARTS_WITH) {
-                        if (SanskritUtils.isDevanagari(prevChar)) boundaryMatch = false
+                        if (isSanskritWordChar(prevChar)) boundaryMatch = false
                     }
                     if (searchMode == SanskritUtils.SanskritSearchMode.EXACT || searchMode == SanskritUtils.SanskritSearchMode.ENDS_WITH) {
-                        if (SanskritUtils.isDevanagari(nextChar)) boundaryMatch = false
+                        if (isSanskritWordChar(nextChar)) boundaryMatch = false
                     }
                 }
 
@@ -306,7 +318,6 @@ object SearchEngine {
                     seenRegions.add(regionKey)
                     
                     val contextStart = max(0, origIdx - 100)
-                    val origEnd = prepared.mapper.getOriginalIndex(matchIdx + qClean.length - 1)
                     val contextEnd = min(textContent.length, origEnd + 100)
                     
                     val cleanContext = if (textContent.isNotEmpty()) {
@@ -461,7 +472,6 @@ object SearchEngine {
         maxPerBook: Int = 0,
         stopAtFirstMatch: Boolean = false,
         searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS,
-        jumbled: Boolean = false,
         onProgress: ((searched: Int, total: Int, bookName: String) -> Unit)? = null
     ): List<SearchResult> {
         val allResults = mutableListOf<SearchResult>()
@@ -478,46 +488,7 @@ object SearchEngine {
             if (textQueries.isNotEmpty()) {
                 val prepared = prepareText(granthaName, textContent)
                 
-                if (jumbled && textQueries.size > 1) {
-                    // Jumbled Search: All words must appear on the same page
-                    val markers = mutableListOf(0)
-                    markers.addAll(prepared.pageMap.map { it.first })
-                    markers.add(textContent.length)
-                    
-                    for (mIdx in 0 until markers.size - 1) {
-                        val pStart = markers[mIdx]
-                        val pEnd = markers[mIdx + 1]
-                        val pageText = textContent.substring(pStart, pEnd)
-                        val pageNum = getPageForIndex(pStart, prepared.pageMap)
-                        
-                        // Local prepared text for this page chunk to use internal engines
-                        val preparedPage = prepareText("${granthaName}_p$pageNum", pageText)
-                        
-                        var pageAllMatched = true
-                        var firstMatch: SearchResult? = null
-                        
-                        for (q in textQueries) {
-                            val matches = if (fuzzyPct > 0) {
-                                fuzzySearchInternal(preparedPage, pageText, q, fuzzyPct, granthaName, subBooks, customRules, 1)
-                            } else {
-                                smartSearchInternal(preparedPage, pageText, q, granthaName, subBooks, customRules, 1, searchMode)
-                            }
-                            
-                            if (matches.isEmpty()) {
-                                pageAllMatched = false
-                                break
-                            }
-                            if (firstMatch == null) {
-                                firstMatch = matches[0].copy(page = pageNum)
-                            }
-                        }
-                        
-                        if (pageAllMatched && firstMatch != null) {
-                            allResults.add(firstMatch)
-                            if (stopAtFirstMatch) break
-                        }
-                    }
-                } else if (textLogic == "and") {
+                if (textLogic == "and") {
                     val allQueryResults = mutableListOf<SearchResult>()
                     var hasAll = true
                     for (q in textQueries) {

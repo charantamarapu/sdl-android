@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.sdl.grantha.data.repository.GranthaRepository
 import com.sdl.grantha.domain.search.SearchEngine
 import com.sdl.grantha.domain.search.SearchResult
+import com.sdl.grantha.domain.search.SanskritUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,7 +56,6 @@ class SearchViewModel @Inject constructor(
         val isAdvancedMode: Boolean = false,
         val isOptionsExpanded: Boolean = false,
         val searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS,
-        val jumbled: Boolean = false,
         val negativeTagsQuery: String = "",
         val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList(),
         val suggestions: List<Suggestion> = emptyList()
@@ -167,10 +167,6 @@ class SearchViewModel @Inject constructor(
         _uiState.update { it.copy(searchMode = mode) }
     }
 
-    fun toggleJumbled() {
-        _uiState.update { it.copy(jumbled = !it.jumbled) }
-    }
-
 
     fun toggleTag(tag: String) {
         _uiState.update { state ->
@@ -278,11 +274,7 @@ class SearchViewModel @Inject constructor(
         val state = _uiState.value
         val textQueriesRaw = state.textQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
         
-        val textQueries = if (state.jumbled) {
-            textQueriesRaw.flatMap { q -> q.split(Regex("\\s+")).map { it.trim() }.filter { it.isNotBlank() } }.distinct()
-        } else {
-            textQueriesRaw
-        }
+        val textQueries = textQueriesRaw
 
         if (textQueries.any { it.length < 2 }) {
             _uiState.update { it.copy(error = "Each search term must be at least 2 characters") }
@@ -369,7 +361,6 @@ class SearchViewModel @Inject constructor(
                                 maxPerBook = state.maxPerBook,
                                 stopAtFirstMatch = true,
                                 searchMode = state.searchMode,
-                                jumbled = state.jumbled,
                                 onProgress = null
                             )
 
@@ -464,11 +455,7 @@ class SearchViewModel @Inject constructor(
         }
 
         val textQueriesRaw = state.textQuery.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        val textQueries = if (state.jumbled) {
-            textQueriesRaw.flatMap { q -> q.split(Regex("\\s+")).map { it.trim() }.filter { it.isNotBlank() } }.distinct()
-        } else {
-            textQueriesRaw
-        }
+        val textQueries = textQueriesRaw
         
         if (textQueries.isEmpty()) return
 

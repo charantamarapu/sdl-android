@@ -25,6 +25,7 @@ import com.sdl.grantha.ui.components.DownloadProgressBar
 import com.sdl.grantha.ui.components.GranthaCard
 import com.sdl.grantha.ui.components.SearchResultCard
 import com.sdl.grantha.ui.viewmodels.SearchViewModel
+import com.sdl.grantha.domain.search.SanskritUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -295,7 +296,7 @@ fun SearchScreen(
                                     expanded = showModeMenu,
                                     onDismissRequest = { showModeMenu = false }
                                 ) {
-                                    SanskritUtils.SanskritSearchMode.values().forEach { mode ->
+                                    for (mode in SanskritUtils.SanskritSearchMode.values()) {
                                         DropdownMenuItem(
                                             text = { 
                                                 Text(
@@ -314,16 +315,6 @@ fun SearchScreen(
                                         )
                                     }
                                 }
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Any Order", style = MaterialTheme.typography.labelMedium)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Switch(
-                                    checked = uiState.jumbled,
-                                    onCheckedChange = { viewModel.toggleJumbled() },
-                                    modifier = Modifier.scale(0.8f)
-                                )
                             }
                         }
 

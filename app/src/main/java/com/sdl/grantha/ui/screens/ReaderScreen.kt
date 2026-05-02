@@ -199,13 +199,12 @@ fun ReaderScreen(
 
                     if (currentPageContent != null) {
                         val text = currentPageContent.text
-                        val highlightQuery = uiState.highlightQuery
                         
-                        val annotatedString = remember(text, highlightQuery) {
+                        val annotatedString = remember(text, uiState.highlightQuery) {
                             androidx.compose.ui.text.buildAnnotatedString {
                                 append(text)
-                                if (!highlightQuery.isNullOrBlank()) {
-                                    val queries = highlightQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                                if (!uiState.highlightQuery.isNullOrBlank()) {
+                                    val queries = uiState.highlightQuery!!.split(",").map { it.trim() }.filter { it.isNotBlank() }
                                     val noisePattern = "[\\s\\-]*"
                                     
                                     queries.forEach { q ->

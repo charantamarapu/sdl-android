@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
@@ -163,7 +164,7 @@ fun LibraryScreen(
                 showSuggestions = uiState.searchQuery.isNotBlank() && suggestions.isNotEmpty()
             }
 
-            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                 OutlinedTextField(
                     value = uiState.searchQuery,
                     onValueChange = { 
@@ -186,20 +187,27 @@ fun LibraryScreen(
                     shape = MaterialTheme.shapes.medium
                 )
 
-                DropdownMenu(
-                    expanded = showSuggestions,
-                    onDismissRequest = { showSuggestions = false },
-                    properties = PopupProperties(focusable = false),
-                    modifier = Modifier.fillMaxWidth(0.85f)
-                ) {
-                    suggestions.forEach { tag ->
-                        DropdownMenuItem(
-                            text = { Text(tag) },
-                            onClick = {
-                                viewModel.setSearchQuery(tag)
-                                showSuggestions = false
+                AnimatedVisibility(visible = showSuggestions) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 1.dp,
+                        shape = MaterialTheme.shapes.medium,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column {
+                            suggestions.forEach { tag ->
+                                ListItem(
+                                    headlineContent = { Text(tag) },
+                                    modifier = Modifier.clickable {
+                                        viewModel.setSearchQuery(tag)
+                                        showSuggestions = false
+                                    }
+                                )
                             }
-                        )
+                        }
                     }
                 }
             }
