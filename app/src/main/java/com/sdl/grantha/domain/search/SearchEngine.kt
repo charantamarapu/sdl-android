@@ -607,12 +607,12 @@ object SearchEngine {
         }
         if (regexes.isEmpty()) return text
         return try {
-            val devanagariRange = "\\u0900-\\u097F"
+            val sanskritWordChars = "\\u0900-\\u0963\\u0970-\\u097Fa-zA-Z0-9"
             val wrappedRegexes = regexes.map { r ->
                 when (searchMode) {
-                    SanskritUtils.SanskritSearchMode.EXACT -> "(?<![$devanagariRange])$r(?![ $devanagariRange])"
-                    SanskritUtils.SanskritSearchMode.STARTS_WITH -> "(?<![$devanagariRange])$r"
-                    SanskritUtils.SanskritSearchMode.ENDS_WITH -> "$r(?![ $devanagariRange])"
+                    SanskritUtils.SanskritSearchMode.EXACT -> "(?<![$sanskritWordChars])$r(?![$sanskritWordChars])"
+                    SanskritUtils.SanskritSearchMode.STARTS_WITH -> "(?<![$sanskritWordChars])$r"
+                    SanskritUtils.SanskritSearchMode.ENDS_WITH -> "$r(?![$sanskritWordChars])"
                     else -> r
                 }
             }
