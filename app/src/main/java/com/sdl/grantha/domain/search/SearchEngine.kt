@@ -237,14 +237,12 @@ object SearchEngine {
      */
     fun smartSearch(
         textContent: String,
-        query: String,
-        granthaName: String = "",
-        subBooks: List<SubBookInfo> = emptyList(),
         customRules: List<Pair<String, String>>? = null,
-        maxResults: Int = 0
+        maxResults: Int = 0,
+        searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS
     ): List<SearchResult> {
         val prepared = prepareText(granthaName, textContent)
-        return smartSearchInternal(prepared, textContent, query, granthaName, subBooks, customRules, maxResults)
+        return smartSearchInternal(prepared, textContent, query, granthaName, subBooks, customRules, maxResults, searchMode)
     }
 
     fun smartSearchInternal(
@@ -254,7 +252,8 @@ object SearchEngine {
         granthaName: String,
         subBooks: List<SubBookInfo>,
         customRules: List<Pair<String, String>>?,
-        maxResults: Int
+        maxResults: Int,
+        searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS
     ): List<SearchResult> {
         if (query.isBlank()) return emptyList()
 
@@ -279,6 +278,27 @@ object SearchEngine {
                 if (matchIdx == -1) break
                 
                 val origIdx = prepared.mapper.getOriginalIndex(matchIdx)
+                val origEnd = prepared.mapper.getOriginalIndex(matchIdx + qClean.length - 1)
+
+                // Boundary Check for Exact Word/Starts With/Ends With
+                var boundaryMatch = true
+                if (searchMode != SanskritUtils.SanskritSearchMode.CONTAINS) {
+                    val prevChar = if (origIdx > 0) textContent[origIdx - 1] else ' '
+                    val nextChar = if (origEnd + 1 < textContent.length) textContent[origEnd + 1] else ' '
+
+                    if (searchMode == SanskritUtils.SanskritSearchMode.EXACT || searchMode == SanskritUtils.SanskritSearchMode.STARTS_WITH) {
+                        if (SanskritUtils.isDevanagari(prevChar)) boundaryMatch = false
+                    }
+                    if (searchMode == SanskritUtils.SanskritSearchMode.EXACT || searchMode == SanskritUtils.SanskritSearchMode.ENDS_WITH) {
+                        if (SanskritUtils.isDevanagari(nextChar)) boundaryMatch = false
+                    }
+                }
+
+                if (!boundaryMatch) {
+                    startPos = matchIdx + 1
+                    continue
+                }
+
                 val pageNum = getPageForIndex(origIdx, prepared.pageMap)
                 
                 val regionKey = (pageNum.toLong() shl 32) or (origIdx / 200).toLong()
@@ -440,6 +460,8 @@ object SearchEngine {
         customRules: List<Pair<String, String>>? = null,
         maxPerBook: Int = 0,
         stopAtFirstMatch: Boolean = false,
+        searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS,
+        jumbled: Boolean = false,
         onProgress: ((searched: Int, total: Int, bookName: String) -> Unit)? = null
     ): List<SearchResult> {
         val allResults = mutableListOf<SearchResult>()
@@ -455,14 +477,54 @@ object SearchEngine {
             val subBooks = parseSubBooks(booksRaw)
             if (textQueries.isNotEmpty()) {
                 val prepared = prepareText(granthaName, textContent)
-                if (textLogic == "and") {
+                
+                if (jumbled && textQueries.size > 1) {
+                    // Jumbled Search: All words must appear on the same page
+                    val markers = mutableListOf(0)
+                    markers.addAll(prepared.pageMap.map { it.first })
+                    markers.add(textContent.length)
+                    
+                    for (mIdx in 0 until markers.size - 1) {
+                        val pStart = markers[mIdx]
+                        val pEnd = markers[mIdx + 1]
+                        val pageText = textContent.substring(pStart, pEnd)
+                        val pageNum = getPageForIndex(pStart, prepared.pageMap)
+                        
+                        // Local prepared text for this page chunk to use internal engines
+                        val preparedPage = prepareText("${granthaName}_p$pageNum", pageText)
+                        
+                        var pageAllMatched = true
+                        var firstMatch: SearchResult? = null
+                        
+                        for (q in textQueries) {
+                            val matches = if (fuzzyPct > 0) {
+                                fuzzySearchInternal(preparedPage, pageText, q, fuzzyPct, granthaName, subBooks, customRules, 1)
+                            } else {
+                                smartSearchInternal(preparedPage, pageText, q, granthaName, subBooks, customRules, 1, searchMode)
+                            }
+                            
+                            if (matches.isEmpty()) {
+                                pageAllMatched = false
+                                break
+                            }
+                            if (firstMatch == null) {
+                                firstMatch = matches[0].copy(page = pageNum)
+                            }
+                        }
+                        
+                        if (pageAllMatched && firstMatch != null) {
+                            allResults.add(firstMatch)
+                            if (stopAtFirstMatch) break
+                        }
+                    }
+                } else if (textLogic == "and") {
                     val allQueryResults = mutableListOf<SearchResult>()
                     var hasAll = true
                     for (q in textQueries) {
                         val matches = if (fuzzyPct > 0) {
                             fuzzySearchInternal(prepared, textContent, q, fuzzyPct, granthaName, subBooks, customRules, if (stopAtFirstMatch) 1 else maxPerBook)
                         } else {
-                            smartSearchInternal(prepared, textContent, q, granthaName, subBooks, customRules, if (stopAtFirstMatch) 1 else maxPerBook)
+                            smartSearchInternal(prepared, textContent, q, granthaName, subBooks, customRules, if (stopAtFirstMatch) 1 else maxPerBook, searchMode)
                         }
                         if (matches.isEmpty()) { 
                             hasAll = false
@@ -483,7 +545,7 @@ object SearchEngine {
                         val matches = if (fuzzyPct > 0) {
                             fuzzySearchInternal(prepared, textContent, q, fuzzyPct, granthaName, subBooks, customRules, if (stopAtFirstMatch) 1 else maxPerBook)
                         } else {
-                            smartSearchInternal(prepared, textContent, q, granthaName, subBooks, customRules, if (stopAtFirstMatch) 1 else maxPerBook)
+                            smartSearchInternal(prepared, textContent, q, granthaName, subBooks, customRules, if (stopAtFirstMatch) 1 else maxPerBook, searchMode)
                         }
                         allResults.addAll(matches)
                         if (stopAtFirstMatch && matches.isNotEmpty()) break
@@ -520,7 +582,8 @@ object SearchEngine {
         text: String,
         searchTerms: List<String>,
         fuzzyPct: Int = 0,
-        customRules: List<Pair<String, String>>? = null
+        customRules: List<Pair<String, String>>? = null,
+        searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS
     ): String {
         if (searchTerms.isEmpty()) return text
         val allTerms = if (customRules != null) {
@@ -573,7 +636,16 @@ object SearchEngine {
         }
         if (regexes.isEmpty()) return text
         return try {
-            val combinedRegex = Regex(regexes.joinToString("|") { "($it)" }, setOf(RegexOption.IGNORE_CASE))
+            val devanagariRange = "\\u0900-\\u097F"
+            val wrappedRegexes = regexes.map { r ->
+                when (searchMode) {
+                    SanskritUtils.SanskritSearchMode.EXACT -> "(?<![$devanagariRange])$r(?![ $devanagariRange])"
+                    SanskritUtils.SanskritSearchMode.STARTS_WITH -> "(?<![$devanagariRange])$r"
+                    SanskritUtils.SanskritSearchMode.ENDS_WITH -> "$r(?![ $devanagariRange])"
+                    else -> r
+                }
+            }
+            val combinedRegex = Regex(wrappedRegexes.joinToString("|") { "($it)" }, setOf(RegexOption.IGNORE_CASE))
             combinedRegex.replace(text) { "【${it.value}】" }
         } catch (_: Exception) { text }
     }

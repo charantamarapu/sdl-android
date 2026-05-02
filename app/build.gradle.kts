@@ -22,7 +22,7 @@ android {
         }
 
         // Server URL as build config field
-        buildConfigField("String", "SERVER_URL", "\"https://sdl.linkpc.net\"")
+        buildConfigField("String", "SERVER_URL", "\"https://sanskritdigitallibrary.run.place\"")
         // AES-256 encryption key (hex) — must match server config.py SDL_ENCRYPTION_KEY
         buildConfigField("String", "SDL_KEY", "\"a3f8c2d1e5b7094f6d2a1c8e3b5f7d9a4e6c0b2d8f1a3e5c7d9b0f2a4e6c8d00\"")
     }

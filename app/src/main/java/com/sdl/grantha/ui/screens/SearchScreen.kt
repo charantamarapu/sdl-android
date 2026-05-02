@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -258,6 +259,75 @@ fun SearchScreen(
                             .fillMaxWidth()
                             .padding(12.dp)
                     ) {
+                        // Search Mode and Jumbled
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            var showModeMenu by remember { mutableStateOf(false) }
+                            
+                            Box {
+                                OutlinedCard(
+                                    onClick = { showModeMenu = true },
+                                    modifier = Modifier.width(180.dp),
+                                    shape = MaterialTheme.shapes.small
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            when(uiState.searchMode) {
+                                                SanskritUtils.SanskritSearchMode.CONTAINS -> "Contains"
+                                                SanskritUtils.SanskritSearchMode.EXACT -> "Exact Word"
+                                                SanskritUtils.SanskritSearchMode.STARTS_WITH -> "Starts With"
+                                                SanskritUtils.SanskritSearchMode.ENDS_WITH -> "Ends With"
+                                            },
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                    }
+                                }
+                                
+                                DropdownMenu(
+                                    expanded = showModeMenu,
+                                    onDismissRequest = { showModeMenu = false }
+                                ) {
+                                    SanskritUtils.SanskritSearchMode.values().forEach { mode ->
+                                        DropdownMenuItem(
+                                            text = { 
+                                                Text(
+                                                    when(mode) {
+                                                        SanskritUtils.SanskritSearchMode.CONTAINS -> "Contains"
+                                                        SanskritUtils.SanskritSearchMode.EXACT -> "Exact Word"
+                                                        SanskritUtils.SanskritSearchMode.STARTS_WITH -> "Starts With"
+                                                        SanskritUtils.SanskritSearchMode.ENDS_WITH -> "Ends With"
+                                                    }
+                                                )
+                                            },
+                                            onClick = { 
+                                                viewModel.setSearchMode(mode)
+                                                showModeMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Any Order", style = MaterialTheme.typography.labelMedium)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Switch(
+                                    checked = uiState.jumbled,
+                                    onCheckedChange = { viewModel.toggleJumbled() },
+                                    modifier = Modifier.scale(0.8f)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
                         // Tag filter (Include)
                         var showTagSuggestions by remember { mutableStateOf(false) }
                         Column(modifier = Modifier.fillMaxWidth()) {

@@ -5,6 +5,17 @@ package com.sdl.grantha.domain.search
  * Port of sanskrit_utils.py from the web app.
  */
 object SanskritUtils {
+    
+    enum class SanskritSearchMode {
+        CONTAINS, EXACT, STARTS_WITH, ENDS_WITH
+    }
+
+    /**
+     * Check if a character is in the Devanagari range.
+     */
+    fun isDevanagari(ch: Char): Boolean {
+        return ch in '\u0900'..'\u097F'
+    }
 
     /**
      * Generate all valid interchangeable permutations of a text based on custom equivalence rules.

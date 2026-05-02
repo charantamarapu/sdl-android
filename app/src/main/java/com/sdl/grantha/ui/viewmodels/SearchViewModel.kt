@@ -54,6 +54,8 @@ class SearchViewModel @Inject constructor(
         val maxPerBook: Int = 20,
         val isAdvancedMode: Boolean = false,
         val isOptionsExpanded: Boolean = false,
+        val searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS,
+        val jumbled: Boolean = false,
         val negativeTagsQuery: String = "",
         val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList(),
         val suggestions: List<Suggestion> = emptyList()
@@ -161,6 +163,14 @@ class SearchViewModel @Inject constructor(
         _uiState.update { it.copy(sanskritNormalize = !it.sanskritNormalize) }
     }
 
+    fun setSearchMode(mode: SanskritUtils.SanskritSearchMode) {
+        _uiState.update { it.copy(searchMode = mode) }
+    }
+
+    fun toggleJumbled() {
+        _uiState.update { it.copy(jumbled = !it.jumbled) }
+    }
+
 
     fun toggleTag(tag: String) {
         _uiState.update { state ->
@@ -266,7 +276,13 @@ class SearchViewModel @Inject constructor(
 
     private fun executeAdvancedSearch() {
         val state = _uiState.value
-        val textQueries = state.textQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        val textQueriesRaw = state.textQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        
+        val textQueries = if (state.jumbled) {
+            textQueriesRaw.flatMap { q -> q.split(Regex("\\s+")).map { it.trim() }.filter { it.isNotBlank() } }.distinct()
+        } else {
+            textQueriesRaw
+        }
 
         if (textQueries.any { it.length < 2 }) {
             _uiState.update { it.copy(error = "Each search term must be at least 2 characters") }
@@ -352,6 +368,8 @@ class SearchViewModel @Inject constructor(
                                 customRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null,
                                 maxPerBook = state.maxPerBook,
                                 stopAtFirstMatch = true,
+                                searchMode = state.searchMode,
+                                jumbled = state.jumbled,
                                 onProgress = null
                             )
 
@@ -369,7 +387,8 @@ class SearchViewModel @Inject constructor(
                                     finalResult.contextText,
                                     textQueries,
                                     state.fuzzyPct,
-                                    state.customRules.ifEmpty { null }
+                                    state.customRules.ifEmpty { null },
+                                    state.searchMode
                                 )
                                 finalResult.copy(highlightedText = h)
                             }
@@ -444,7 +463,12 @@ class SearchViewModel @Inject constructor(
             return
         }
 
-        val textQueries = state.textQuery.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val textQueriesRaw = state.textQuery.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val textQueries = if (state.jumbled) {
+            textQueriesRaw.flatMap { q -> q.split(Regex("\\s+")).map { it.trim() }.filter { it.isNotBlank() } }.distinct()
+        } else {
+            textQueriesRaw
+        }
         
         if (textQueries.isEmpty()) return
 
@@ -463,11 +487,11 @@ class SearchViewModel @Inject constructor(
                         var allSnippets = mutableListOf<SearchResult>()
                         for (q in textQueries) {
                              val activeRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null
-                             val matches = if (state.fuzzyPct > 0) {
-                                 SearchEngine.fuzzySearchInternal(prepared, text, q, state.fuzzyPct, bookName, subBooks, activeRules, state.maxPerBook)
-                             } else {
-                                 SearchEngine.smartSearchInternal(prepared, text, q, bookName, subBooks, activeRules, state.maxPerBook)
-                             }
+                              val matches = if (state.fuzzyPct > 0) {
+                                  SearchEngine.fuzzySearchInternal(prepared, text, q, state.fuzzyPct, bookName, subBooks, activeRules, state.maxPerBook)
+                              } else {
+                                  SearchEngine.smartSearchInternal(prepared, text, q, bookName, subBooks, activeRules, state.maxPerBook, state.searchMode)
+                              }
                              allSnippets.addAll(matches)
                         }
                         
@@ -490,7 +514,8 @@ class SearchViewModel @Inject constructor(
                                 result.contextText,
                                 textQueries,
                                 state.fuzzyPct,
-                                state.customRules.ifEmpty { null }
+                                state.customRules.ifEmpty { null },
+                                state.searchMode
                             )
                             result.copy(highlightedText = h)
                         }
