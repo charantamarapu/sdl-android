@@ -11,7 +11,7 @@ import kotlin.math.min
  * All searching happens on-device — no server calls.
  */
 object SearchEngine {
-    private val PAGE_PATTERN = Regex("\\{\\[\\(\\d+\\)\\]\\}")
+    private val PAGE_PATTERN = Regex("\\{\\[\\(\\d+\\)]\\}")
     private val WHITESPACE_PATTERN = Regex("\\s+")
 
     fun extractContext(textContent: String, origIdx: Int): String {
@@ -58,8 +58,8 @@ object SearchEngine {
     // Hybrid cache: Hard references for the 3 most recent books, Soft for others
     private val hardCache = mutableMapOf<String, PreparedText>()
     private val softCache = mutableMapOf<String, java.lang.ref.SoftReference<PreparedText>>()
-    private val MAX_HARD_CACHE = 3
-    private val MAX_SOFT_CACHE = 15
+    private const val MAX_HARD_CACHE = 3
+    private const val MAX_SOFT_CACHE = 15
 
     fun hasCache(cacheKey: String): Boolean {
         synchronized(hardCache) {
@@ -167,19 +167,6 @@ object SearchEngine {
         return prepareText("hash_${textContent.hashCode()}", textContent)
     }
 
-    /**
-     * Build a map of character indices to page numbers.
-     * (Deprecated: Use prepareText for better performance)
-     */
-    fun getPageMap(textContent: String): List<Pair<Int, Int>> {
-        val pageMap = mutableListOf<Pair<Int, Int>>()
-        for (match in PAGE_PATTERN.findAll(textContent)) {
-            val group = match.groups[1] ?: continue
-            val pageNum = group.value.toIntOrNull() ?: continue
-            pageMap.add(Pair(match.range.last + 1, pageNum))
-        }
-        return pageMap
-    }
 
     /**
      * Find the page number for a given character index.
@@ -232,21 +219,6 @@ object SearchEngine {
         }
     }
 
-    /**
-     * Smart search: exact match ignoring spaces and hyphens.
-     */
-    fun smartSearch(
-        textContent: String,
-        query: String,
-        granthaName: String = "",
-        subBooks: List<SubBookInfo> = emptyList(),
-        customRules: List<Pair<String, String>>? = null,
-        maxResults: Int = 0,
-        searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS
-    ): List<SearchResult> {
-        val prepared = prepareText(granthaName, textContent)
-        return smartSearchInternal(prepared, textContent, query, granthaName, subBooks, customRules, maxResults, searchMode)
-    }
 
     fun smartSearchInternal(
         prepared: PreparedText,
@@ -349,21 +321,6 @@ object SearchEngine {
         return results.sortedBy { it.page }
     }
 
-    /**
-     * Fuzzy search using Levenshtein edit distance.
-     */
-    fun fuzzySearch(
-        textContent: String,
-        query: String,
-        errorPct: Int = 20,
-        granthaName: String = "",
-        subBooks: List<SubBookInfo> = emptyList(),
-        customRules: List<Pair<String, String>>? = null,
-        maxResults: Int = 0
-    ): List<SearchResult> {
-        val prepared = prepareText(granthaName, textContent)
-        return fuzzySearchInternal(prepared, textContent, query, errorPct, granthaName, subBooks, customRules, maxResults)
-    }
 
     fun fuzzySearchInternal(
         prepared: PreparedText,
