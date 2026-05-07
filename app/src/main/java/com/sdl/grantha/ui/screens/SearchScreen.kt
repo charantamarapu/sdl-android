@@ -275,9 +275,9 @@ fun SearchScreen(
                                         shape = MaterialTheme.shapes.small
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 12.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                            horizontalArrangement = Arrangement.Center
                                         ) {
                                             Text(
                                                 when(uiState.searchMode) {
@@ -288,7 +288,9 @@ fun SearchScreen(
                                                 },
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 maxLines = 1,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f),
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                             )
                                             Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                                         }
