@@ -260,63 +260,82 @@ fun SearchScreen(
                             .fillMaxWidth()
                             .padding(12.dp)
                     ) {
-                        // Search Mode and Jumbled
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            var showModeMenu by remember { mutableStateOf(false) }
-                            
-                            Box {
-                                OutlinedCard(
-                                    onClick = { showModeMenu = true },
-                                    modifier = Modifier.width(180.dp),
-                                    shape = MaterialTheme.shapes.small
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                            // Search Mode and Logic
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                var showModeMenu by remember { mutableStateOf(false) }
+                                
+                                Box {
+                                    OutlinedCard(
+                                        onClick = { showModeMenu = true },
+                                        modifier = Modifier.width(135.dp),
+                                        shape = MaterialTheme.shapes.small
                                     ) {
-                                        Text(
-                                            when(uiState.searchMode) {
-                                                SanskritUtils.SanskritSearchMode.CONTAINS -> "Contains"
-                                                SanskritUtils.SanskritSearchMode.EXACT -> "Exact Word"
-                                                SanskritUtils.SanskritSearchMode.STARTS_WITH -> "Starts With"
-                                                SanskritUtils.SanskritSearchMode.ENDS_WITH -> "Ends With"
-                                            },
-                                            style = MaterialTheme.typography.bodyMedium
-                                        )
-                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                when(uiState.searchMode) {
+                                                    SanskritUtils.SanskritSearchMode.CONTAINS -> "Contains"
+                                                    SanskritUtils.SanskritSearchMode.EXACT -> "Exact Word"
+                                                    SanskritUtils.SanskritSearchMode.STARTS_WITH -> "Starts With"
+                                                    SanskritUtils.SanskritSearchMode.ENDS_WITH -> "Ends With"
+                                                },
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                        }
+                                    }
+                                    
+                                    DropdownMenu(
+                                        expanded = showModeMenu,
+                                        onDismissRequest = { showModeMenu = false }
+                                    ) {
+                                        for (mode in SanskritUtils.SanskritSearchMode.values()) {
+                                            DropdownMenuItem(
+                                                text = { 
+                                                    Text(
+                                                        when(mode) {
+                                                            SanskritUtils.SanskritSearchMode.CONTAINS -> "Contains"
+                                                            SanskritUtils.SanskritSearchMode.EXACT -> "Exact Word"
+                                                            SanskritUtils.SanskritSearchMode.STARTS_WITH -> "Starts With"
+                                                            SanskritUtils.SanskritSearchMode.ENDS_WITH -> "Ends With"
+                                                        }
+                                                    )
+                                                },
+                                                onClick = { 
+                                                    viewModel.setSearchMode(mode)
+                                                    showModeMenu = false
+                                                }
+                                            )
+                                        }
                                     }
                                 }
-                                
-                                DropdownMenu(
-                                    expanded = showModeMenu,
-                                    onDismissRequest = { showModeMenu = false }
-                                ) {
-                                    for (mode in SanskritUtils.SanskritSearchMode.values()) {
-                                        DropdownMenuItem(
-                                            text = { 
-                                                Text(
-                                                    when(mode) {
-                                                        SanskritUtils.SanskritSearchMode.CONTAINS -> "Contains"
-                                                        SanskritUtils.SanskritSearchMode.EXACT -> "Exact Word"
-                                                        SanskritUtils.SanskritSearchMode.STARTS_WITH -> "Starts With"
-                                                        SanskritUtils.SanskritSearchMode.ENDS_WITH -> "Ends With"
-                                                    }
-                                                )
-                                            },
-                                            onClick = { 
-                                                viewModel.setSearchMode(mode)
-                                                showModeMenu = false
-                                            }
-                                        )
-                                    }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Logic:", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(end = 4.dp))
+                                    FilterChip(
+                                        selected = uiState.textLogic == "or",
+                                        onClick = { viewModel.setTextLogic("or") },
+                                        label = { Text("OR", style = MaterialTheme.typography.labelSmall) },
+                                        modifier = Modifier.height(32.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    FilterChip(
+                                        selected = uiState.textLogic == "and",
+                                        onClick = { viewModel.setTextLogic("and") },
+                                        label = { Text("AND", style = MaterialTheme.typography.labelSmall) },
+                                        modifier = Modifier.height(32.dp)
+                                    )
                                 }
                             }
-                        }
 
                         Spacer(modifier = Modifier.height(8.dp))
                         // Tag filter (Include)
@@ -429,29 +448,6 @@ fun SearchScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Logic toggles
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Text Logic", style = MaterialTheme.typography.labelSmall)
-                                Row {
-                                    FilterChip(
-                                        selected = uiState.textLogic == "or",
-                                        onClick = { viewModel.setTextLogic("or") },
-                                        label = { Text("OR") }
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    FilterChip(
-                                        selected = uiState.textLogic == "and",
-                                        onClick = { viewModel.setTextLogic("and") },
-                                        label = { Text("AND") }
-                                    )
-                                }
-                            }
-
-                        }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
