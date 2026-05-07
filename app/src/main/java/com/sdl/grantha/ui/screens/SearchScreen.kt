@@ -471,18 +471,6 @@ fun SearchScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Fuzzy search slider
-                        Text(
-                            "Fuzzy Tolerance: ${uiState.fuzzyPct}%",
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                        Slider(
-                            value = uiState.fuzzyPct.toFloat(),
-                            onValueChange = { viewModel.setFuzzyPct(it.toInt()) },
-                            valueRange = 0f..50f,
-                            steps = 9
-                        )
-
                         // Sanskrit Normalization Toggle
                         Row(
                             modifier = Modifier.fillMaxWidth(),

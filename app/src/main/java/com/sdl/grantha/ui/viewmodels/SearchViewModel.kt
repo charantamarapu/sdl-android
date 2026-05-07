@@ -10,12 +10,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.yield
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import javax.inject.Inject
 
@@ -31,7 +28,6 @@ class SearchViewModel @Inject constructor(
         val tagsQuery: String = "",
         val textLogic: String = "or",
         val tagsLogic: String = "or",
-        val fuzzyPct: Int = 0,
         val isSearching: Boolean = false,
         val isDeepSearching: Boolean = false,
         val searchProgress: Float = 0f,
@@ -151,10 +147,6 @@ class SearchViewModel @Inject constructor(
         _uiState.update { it.copy(tagsLogic = logic) }
     }
 
-    fun setFuzzyPct(pct: Int) {
-        _uiState.update { it.copy(fuzzyPct = pct.coerceIn(0, 50)) }
-    }
-
     fun setMaxPerBook(max: Int) {
         _uiState.update { it.copy(maxPerBook = max) }
     }
@@ -198,9 +190,6 @@ class SearchViewModel @Inject constructor(
         return rules
     }
 
-    /**
-     * Execute search across all downloaded granthas.
-     */
     fun search(isAdvanced: Boolean) {
         val state = _uiState.value
         val query = state.textQuery.trim()
@@ -211,10 +200,8 @@ class SearchViewModel @Inject constructor(
         }
 
         if (!isAdvanced) {
-            // BASIC SEARCH: Search book metadata (title, tags)
             executeBasicSearch(query)
         } else {
-            // ADVANCED SEARCH: Search inside books (OCR)
             executeAdvancedSearch()
         }
     }
@@ -236,7 +223,6 @@ class SearchViewModel @Inject constructor(
                 ) 
             }
             try {
-                // Search across the FULL catalog (downloaded or not)
                 val allGranthas = repository.getAllGranthas().first()
                 val q = query.lowercase()
                 
@@ -251,20 +237,15 @@ class SearchViewModel @Inject constructor(
                         isSearching = false, 
                         basicResults = results, 
                         hasSearched = true,
-                        results = emptyList() // Clear OCR results if any
+                        results = emptyList()
                     ) 
                 }
                 val duration = System.currentTimeMillis() - startTime
                 val seconds = duration / 1000.0
                 android.widget.Toast.makeText(application, "Basic search took ${String.format("%.1f", seconds)}s", android.widget.Toast.LENGTH_SHORT).show()
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                // Ignore cancellation
-                throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(isSearching = false, error = e.message ?: "Basic search failed") }
-            } finally {
-                if (searchJob?.isCancelled == true) {
-                    _uiState.update { it.copy(isSearching = false) }
+                if (e !is CancellationException) {
+                    _uiState.update { it.copy(isSearching = false, error = e.message ?: "Basic search failed") }
                 }
             }
         }
@@ -273,7 +254,6 @@ class SearchViewModel @Inject constructor(
     private fun executeAdvancedSearch() {
         val state = _uiState.value
         val textQueriesRaw = state.textQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        
         val textQueries = textQueriesRaw
 
         if (textQueries.any { it.length < 2 }) {
@@ -301,67 +281,47 @@ class SearchViewModel @Inject constructor(
 
             try {
                 withContext(Dispatchers.Default) {
-                    val downloadedFlow = repository.getDownloadedGranthas()
-                    val downloaded = downloadedFlow.first()
+                    val downloaded = repository.getDownloadedGranthas().first()
 
                     if (downloaded.isEmpty()) {
                         withContext(Dispatchers.Main) {
-                            _uiState.update { it.copy(isSearching = false, error = "Advanced search only works on downloaded books. Please download some books first.") }
+                            _uiState.update { it.copy(isSearching = false, error = "Please download some books first.") }
                         }
                         return@withContext
                     }
 
-                    val tagQueries = state.tagsQuery.split(",")
-                        .map { it.trim().lowercase() }
-                        .filter { it.isNotBlank() }
-
-                    val negTagQueries = state.negativeTagsQuery.split(",")
-                        .map { it.trim().lowercase() }
-                        .filter { it.isNotBlank() }
+                    val tagQueries = state.tagsQuery.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+                    val negTagQueries = state.negativeTagsQuery.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
 
                     val totalBooks = downloaded.size
                     var booksProcessed = 0
 
-                    // Search books in parallel with a concurrency limit of 4
-                    // This allows new books to start as soon as one finishes, maximizing CPU usage.
                     val concurrency = Runtime.getRuntime().availableProcessors()
                     downloaded.asFlow().flatMapMerge(concurrency = concurrency) { grantha ->
                         flow {
                             yield()
-                            
-                            // Check cache first to avoid slow decryption
-                            val text = if (SearchEngine.hasCache(grantha.name)) {
-                                "" // Empty string, searchAll will use cache
-                            } else {
-                                repository.getGranthaText(grantha.name)
-                            }
-
+                            val text = if (SearchEngine.hasCache(grantha.name)) "" else repository.getGranthaText(grantha.name)
                             if (text == null) {
                                 synchronized(this@SearchViewModel) {
                                     booksProcessed++
-                                    val progress = booksProcessed.toFloat() / totalBooks
-                                    android.util.Log.w("SearchViewModel", "Failed to load text for book: ${grantha.name} (Check logs for details)")
-                                    _uiState.update { it.copy(searchProgress = progress) }
+                                    _uiState.update { it.copy(searchProgress = booksProcessed.toFloat() / totalBooks) }
                                 }
                                 emit(Unit)
                                 return@flow
                             }
 
                             val singleMap = mapOf(grantha.name to Triple(text, grantha.tags, grantha.booksRaw))
-
                             val partialResults = SearchEngine.searchAll(
                                 granthaTexts = singleMap,
                                 textQueries = textQueries,
                                 textLogic = state.textLogic,
-                                fuzzyPct = state.fuzzyPct,
                                 tagQueries = tagQueries,
                                 tagsLogic = state.tagsLogic,
                                 negativeTagQueries = negTagQueries,
                                 customRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null,
                                 maxPerBook = state.maxPerBook,
                                 stopAtFirstMatch = true,
-                                searchMode = state.searchMode,
-                                onProgress = null
+                                searchMode = state.searchMode
                             )
 
                             val highlighted = partialResults.map { result ->
@@ -377,7 +337,6 @@ class SearchViewModel @Inject constructor(
                                 val h = SearchEngine.highlightText(
                                     finalResult.contextText,
                                     textQueries,
-                                    state.fuzzyPct,
                                     state.customRules.ifEmpty { null },
                                     state.searchMode
                                 )
@@ -386,10 +345,9 @@ class SearchViewModel @Inject constructor(
 
                             synchronized(this@SearchViewModel) {
                                 booksProcessed++
-                                val progress = booksProcessed.toFloat() / totalBooks
                                 _uiState.update { 
                                     it.copy(
-                                        searchProgress = progress,
+                                        searchProgress = booksProcessed.toFloat() / totalBooks,
                                         currentBook = grantha.name,
                                         results = it.results + highlighted
                                     ) 
@@ -400,22 +358,12 @@ class SearchViewModel @Inject constructor(
                     }.collect()
                 }
 
-                _uiState.update {
-                    it.copy(
-                        isSearching = false,
-                        hasSearched = true,
-                        searchProgress = 1f
-                    )
-                }
+                _uiState.update { it.copy(isSearching = false, hasSearched = true, searchProgress = 1f) }
                 val duration = System.currentTimeMillis() - startTime
-                val seconds = duration / 1000.0
-                android.widget.Toast.makeText(application, "Advanced search took ${String.format("%.1f", seconds)}s", android.widget.Toast.LENGTH_SHORT).show()
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                // Ignore
-                throw e
-            } catch (e: Throwable) {
-                _uiState.update {
-                    it.copy(isSearching = false, error = e.message ?: "Search failed: Error")
+                android.widget.Toast.makeText(application, "Search took ${String.format("%.1f", duration / 1000.0)}s", android.widget.Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    _uiState.update { it.copy(isSearching = false, error = e.message ?: "Search failed") }
                 }
             } finally {
                 _uiState.update { it.copy(isSearching = false) }
@@ -437,15 +385,13 @@ class SearchViewModel @Inject constructor(
                 hasSearched = false, 
                 selectedBookResults = null,
                 bookSnippets = emptyList(),
-                cachedBookSnippets = emptyMap() // Clear cache
+                cachedBookSnippets = emptyMap()
             ) 
         }
     }
 
     fun selectBookForDeepSearch(bookName: String) {
         val state = _uiState.value
-        
-        // Return cached results if available
         if (state.cachedBookSnippets.containsKey(bookName)) {
             _uiState.update { it.copy(
                 selectedBookResults = bookName,
@@ -456,12 +402,10 @@ class SearchViewModel @Inject constructor(
 
         val textQueriesRaw = state.textQuery.split(",").map { it.trim() }.filter { it.isNotEmpty() }
         val textQueries = textQueriesRaw
-        
         if (textQueries.isEmpty()) return
 
         viewModelScope.launch {
             _uiState.update { it.copy(isDeepSearching = true, selectedBookResults = bookName, bookSnippets = emptyList()) }
-            
             try {
                 withContext(Dispatchers.IO) {
                     val grantha = repository.getGranthaByName(bookName)
@@ -471,36 +415,43 @@ class SearchViewModel @Inject constructor(
                         val subBooks = SearchEngine.parseSubBooks(grantha.booksRaw)
                         val prepared = SearchEngine.prepareText(bookName, text)
                         
-                        var allSnippets = mutableListOf<SearchResult>()
+                        val matchesByTerm = mutableListOf<List<SearchResult>>()
                         for (q in textQueries) {
                              val activeRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null
-                              val matches = if (state.fuzzyPct > 0) {
-                                  SearchEngine.fuzzySearchInternal(prepared, text, q, state.fuzzyPct, bookName, subBooks, activeRules, state.maxPerBook)
-                              } else {
-                                  SearchEngine.smartSearchInternal(prepared, text, q, bookName, subBooks, activeRules, state.maxPerBook, state.searchMode)
-                              }
-                             allSnippets.addAll(matches)
+                             val matches = SearchEngine.smartSearchInternal(prepared, text, q, bookName, subBooks, activeRules, state.maxPerBook, state.searchMode)
+                             if (state.textLogic == "and" && matches.isEmpty()) {
+                                 matchesByTerm.clear()
+                                 break
+                             }
+                             matchesByTerm.add(matches)
                         }
                         
-                        // Lazy Context Filling for Deep Search
-                        if (allSnippets.any { it.contextText == "MATCH_FOUND_WITHOUT_TEXT" }) {
+                        val allSnippets = if (state.textLogic == "and") {
+                            if (matchesByTerm.size == textQueries.size && textQueries.isNotEmpty()) {
+                                val pagesPerTerm = matchesByTerm.map { t -> t.map { it.page }.toSet() }
+                                val commonPages = pagesPerTerm.reduce { acc, set -> acc.intersect(set) }
+                                matchesByTerm.flatten().filter { it.page in commonPages }
+                            } else emptyList()
+                        } else {
+                            matchesByTerm.flatten()
+                        }
+                        
+                        var finalSnippets = allSnippets.sortedBy { it.page }
+                        if (finalSnippets.any { it.contextText == "MATCH_FOUND_WITHOUT_TEXT" }) {
                             val realText = repository.getGranthaText(bookName)
                             if (realText != null) {
-                                allSnippets = allSnippets.map { 
+                                finalSnippets = finalSnippets.map { 
                                     if (it.contextText == "MATCH_FOUND_WITHOUT_TEXT") {
                                         it.copy(contextText = "...${SearchEngine.extractContext(realText, it.matchOffset)}...")
                                     } else it
-                                }.toMutableList()
+                                }
                             }
                         }
 
-                        val sorted = allSnippets.sortedBy { it.page }
-                        
-                        val highlighted = sorted.map { result ->
+                        val highlighted = finalSnippets.map { result ->
                             val h = SearchEngine.highlightText(
                                 result.contextText,
                                 textQueries,
-                                state.fuzzyPct,
                                 state.customRules.ifEmpty { null },
                                 state.searchMode
                             )
@@ -511,7 +462,7 @@ class SearchViewModel @Inject constructor(
                             it.copy(
                                 isDeepSearching = false, 
                                 bookSnippets = highlighted,
-                                cachedBookSnippets = it.cachedBookSnippets + (bookName to highlighted) // Update cache
+                                cachedBookSnippets = it.cachedBookSnippets + (bookName to highlighted)
                             ) 
                         }
                     } else {
@@ -536,7 +487,6 @@ class SearchViewModel @Inject constructor(
         _uiState.update { 
             it.copy(
                 isAdvancedMode = isAdvanced,
-                // If switching to advanced and no results, expand options
                 isOptionsExpanded = if (isAdvanced && it.results.isEmpty()) true else it.isOptionsExpanded
             ) 
         }
