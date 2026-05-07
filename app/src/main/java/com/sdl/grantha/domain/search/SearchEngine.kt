@@ -328,7 +328,6 @@ object SearchEngine {
         textQueries: List<String>,
         textLogic: String = "or",
         tagQueries: List<String> = emptyList(),
-        tagsLogic: String = "or",
         negativeTagQueries: List<String> = emptyList(),
         customRules: List<Pair<String, String>>? = null,
         maxPerBook: Int = 0,
@@ -342,7 +341,7 @@ object SearchEngine {
 
         for ((granthaName, triple) in granthaTexts) {
             val (textContent, tags, booksRaw) = triple
-            if (!matchesTags(tags.lowercase(), granthaName.lowercase(), tagQueries, tagsLogic, negativeTagQueries)) {
+            if (!matchesTags(tags.lowercase(), granthaName.lowercase(), tagQueries, negativeTagQueries)) {
                 searched++; onProgress?.invoke(searched, total, granthaName); continue
             }
 
@@ -386,18 +385,14 @@ object SearchEngine {
         tags: String,
         bookName: String,
         tagQueries: List<String>,
-        tagsLogic: String,
         negativeTagQueries: List<String>
     ): Boolean {
         if (negativeTagQueries.isNotEmpty()) {
             if (negativeTagQueries.any { it in tags || it in bookName }) return false
         }
         if (tagQueries.isEmpty()) return true
-        return if (tagsLogic == "and") {
-            tagQueries.all { it in tags || it in bookName }
-        } else {
-            tagQueries.any { it in tags || it in bookName }
-        }
+        if (tagQueries.isEmpty()) return true
+        return tagQueries.any { it in tags || it in bookName }
     }
 
     /**

@@ -28,7 +28,6 @@ class SearchViewModel @Inject constructor(
         val textQuery: String = "",
         val tagsQuery: String = "",
         val textLogic: String = "or",
-        val tagsLogic: String = "or",
         val isSearching: Boolean = false,
         val isDeepSearching: Boolean = false,
         val searchProgress: Float = 0f,
@@ -144,9 +143,6 @@ class SearchViewModel @Inject constructor(
         _uiState.update { it.copy(textLogic = logic) }
     }
 
-    fun setTagsLogic(logic: String) {
-        _uiState.update { it.copy(tagsLogic = logic) }
-    }
 
     fun setMaxPerBook(max: Int) {
         _uiState.update { it.copy(maxPerBook = max) }
@@ -317,7 +313,6 @@ class SearchViewModel @Inject constructor(
                                 textQueries = textQueries,
                                 textLogic = state.textLogic,
                                 tagQueries = tagQueries,
-                                tagsLogic = state.tagsLogic,
                                 negativeTagQueries = negTagQueries,
                                 customRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null,
                                 maxPerBook = state.maxPerBook,

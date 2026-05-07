@@ -451,22 +451,6 @@ fun SearchScreen(
                                 }
                             }
 
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Tag Logic", style = MaterialTheme.typography.labelSmall)
-                                Row {
-                                    FilterChip(
-                                        selected = uiState.tagsLogic == "or",
-                                        onClick = { viewModel.setTagsLogic("or") },
-                                        label = { Text("OR") }
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    FilterChip(
-                                        selected = uiState.tagsLogic == "and",
-                                        onClick = { viewModel.setTagsLogic("and") },
-                                        label = { Text("AND") }
-                                    )
-                                }
-                            }
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
