@@ -78,7 +78,7 @@ object SearchEngine {
         }
 
         if (textContent.isEmpty()) {
-            return PreparedText("", CharArray(0), IndexMapper(IntArray(0)), emptyList())
+            return PreparedText("", IndexMapper(IntArray(0)), emptyList())
         }
 
         val pageMap = mutableListOf<Pair<Int, Int>>()
@@ -132,7 +132,7 @@ object SearchEngine {
         }
 
         val result = PreparedText(
-            cleanString = String(finalCleanChars),
+            cleanString = String(cleanCharsArr, 0, cleanCount),
             mapper = IndexMapper(offsetPoints.copyOf(offsetCount)),
             pageMap = pageMap
         )
