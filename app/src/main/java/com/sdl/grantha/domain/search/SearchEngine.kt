@@ -1,6 +1,5 @@
 package com.sdl.grantha.domain.search
 
-import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
@@ -391,7 +390,6 @@ object SearchEngine {
             if (negativeTagQueries.any { it in tags || it in bookName }) return false
         }
         if (tagQueries.isEmpty()) return true
-        if (tagQueries.isEmpty()) return true
         return tagQueries.any { it in tags || it in bookName }
     }
 
@@ -440,9 +438,4 @@ object SearchEngine {
         } catch (_: Exception) { text }
     }
 
-    private fun IntRange.intersectRange(other: IntRange): IntRange {
-        val start = maxOf(this.first, other.first)
-        val end = minOf(this.last, other.last)
-        return if (start <= end) start..end else IntRange.EMPTY
-    }
 }
