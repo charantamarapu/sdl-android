@@ -190,11 +190,11 @@ object SearchEngine {
     data class SubBookInfo(val startPage: Int, val endPage: Int, val name: String)
 
     /**
-     * Parse a Books: field string into SubBookInfo list.
+     * Parse a Subbook: field string into SubBookInfo list.
      */
-    fun parseSubBooks(booksRaw: String): List<SubBookInfo> {
-        if (booksRaw.isBlank()) return emptyList()
-        return booksRaw.split(",").mapNotNull { entry ->
+    fun parseSubBooks(subbooksRaw: String): List<SubBookInfo> {
+        if (subbooksRaw.isBlank()) return emptyList()
+        return subbooksRaw.split(",").mapNotNull { entry ->
             val trimmed = entry.trim()
             val colonIdx = trimmed.indexOf(':')
             if (colonIdx < 0) return@mapNotNull null
@@ -339,12 +339,12 @@ object SearchEngine {
         var searched = 0
 
         for ((granthaName, triple) in granthaTexts) {
-            val (textContent, tags, booksRaw) = triple
+            val (textContent, tags, subbooksRaw) = triple
             if (!matchesTags(tags.lowercase(), granthaName.lowercase(), tagQueries, negativeTagQueries)) {
                 searched++; onProgress?.invoke(searched, total, granthaName); continue
             }
 
-            val subBooks = parseSubBooks(booksRaw)
+            val subBooks = parseSubBooks(subbooksRaw)
             if (textQueries.isNotEmpty()) {
                 val prepared = prepareText(granthaName, textContent)
                 

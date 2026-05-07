@@ -76,7 +76,7 @@ class GranthaRepository @Inject constructor(
                     sizeBytes = item.sizeBytes,
                     pageCount = item.pageCount,
                     checksum = item.checksum,
-                    booksRaw = item.books,
+                    subbooksRaw = item.subbooks,
                     // Preserve local state
                     isDownloaded = existing?.isDownloaded ?: false,
                     downloadDate = existing?.downloadDate,
@@ -323,12 +323,12 @@ class GranthaRepository @Inject constructor(
     }
 
     /**
-     * Parse sub-books from the booksRaw field.
+     * Parse sub-books from the subbooksRaw field.
      * Format: "1-50:BookName1, 51-120:BookName2"
      */
-    fun parseSubBooks(booksRaw: String): List<SubBook> {
-        if (booksRaw.isBlank()) return emptyList()
-        return booksRaw.split(",").mapNotNull { entry ->
+    fun parseSubBooks(subbooksRaw: String): List<SubBook> {
+        if (subbooksRaw.isBlank()) return emptyList()
+        return subbooksRaw.split(",").mapNotNull { entry ->
             val trimmed = entry.trim()
             val colonIdx = trimmed.indexOf(':')
             if (colonIdx < 0) return@mapNotNull null

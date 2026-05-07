@@ -57,7 +57,7 @@ class ReaderViewModel @Inject constructor(
                     return@launch
                 }
 
-                val subBooks = SearchEngine.parseSubBooks(grantha.booksRaw)
+                val subBooks = SearchEngine.parseSubBooks(grantha.subbooksRaw)
 
                 if (grantha.isDownloaded) {
                     withContext(Dispatchers.IO) {

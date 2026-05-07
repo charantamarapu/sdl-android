@@ -18,5 +18,5 @@ data class GranthaItem(
     @SerializedName("size_bytes") val sizeBytes: Long = 0,
     @SerializedName("page_count") val pageCount: Int = 0,
     @SerializedName("checksum") val checksum: String = "",
-    @SerializedName("books") val books: String = ""
+    @SerializedName("subbooks") val subbooks: String = ""
 )

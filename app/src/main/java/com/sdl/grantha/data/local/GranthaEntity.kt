@@ -17,7 +17,7 @@ data class GranthaEntity(
     val sizeBytes: Long = 0,
     val pageCount: Int = 0,
     val checksum: String = "",
-    val booksRaw: String = "",
+    val subbooksRaw: String = "",
     // Local state
     val isDownloaded: Boolean = false,
     val downloadDate: Long? = null,
