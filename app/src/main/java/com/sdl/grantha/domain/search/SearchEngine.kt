@@ -78,7 +78,7 @@ object SearchEngine {
         }
 
         if (textContent.isEmpty()) {
-            return PreparedText("", IndexMapper(IntArray(0)), emptyList())
+            return PreparedText("", CharArray(0), IndexMapper(IntArray(0)), emptyList())
         }
 
         val pageMap = mutableListOf<Pair<Int, Int>>()
@@ -132,20 +132,17 @@ object SearchEngine {
         }
 
         val result = PreparedText(
-            cleanString = String(cleanCharsArr, 0, cleanCount),
+            cleanString = String(finalCleanChars),
             mapper = IndexMapper(offsetPoints.copyOf(offsetCount)),
             pageMap = pageMap
         )
 
         synchronized(hardCache) {
             if (hardCache.size >= MAX_HARD_CACHE) {
-                val keys = hardCache.keys.toList()
-                if (keys.isNotEmpty()) {
-                    val firstKey = keys.first()
-                    val removed = hardCache.remove(firstKey)
-                    if (removed != null) {
-                        softCache[firstKey] = java.lang.ref.SoftReference(removed)
-                    }
+                val firstKey = hardCache.keys.first()
+                val removed = hardCache.remove(firstKey)
+                if (removed != null) {
+                    softCache[firstKey] = java.lang.ref.SoftReference(removed)
                 }
             }
             hardCache[cacheKey] = result
@@ -261,6 +258,10 @@ object SearchEngine {
                     val prevChar = if (origIdx > 0) textContent[origIdx - 1] else ' '
                     val nextChar = if (origEnd + 1 < textContent.length) textContent[origEnd + 1] else ' '
 
+                    // A boundary is valid if the adjacent character is NOT a "word character".
+                    // For Sanskrit, word characters are Devanagari letters/matras, Roman letters, and digits.
+                    // We explicitly exclude Dandas (।, ॥) and Devanagari digits (०-९) from word characters
+                    // because they commonly follow words as verse/sentence markers.
                     fun isSanskritWordChar(ch: Char): Boolean {
                         return (ch in '\u0900'..'\u097F' && ch != '।' && ch != '॥' && ch !in '०'..'९') || 
                                (ch in 'a'..'z') || (ch in 'A'..'Z') || (ch in '0'..'9')
@@ -292,7 +293,7 @@ object SearchEngine {
                         val rawContext = textContent.substring(contextStart, contextEnd)
                         rawContext.replace(PAGE_PATTERN, " ").replace(WHITESPACE_PATTERN, " ").trim()
                     } else {
-                        "MATCH_FOUND_WITHOUT_TEXT"
+                        "MATCH_FOUND_WITHOUT_TEXT" // Signal that we need to decrypt to get context
                     }
                     
                     val matchedPage = getPageForIndex(origIdx, prepared.pageMap)
@@ -304,7 +305,7 @@ object SearchEngine {
                             page = matchedPage,
                             contextText = if (cleanContext == "MATCH_FOUND_WITHOUT_TEXT") cleanContext else "...$cleanContext...",
                             subBook = subBook,
-                            matchOffset = origIdx
+                            matchOffset = origIdx // Store offset for lazy context extraction
                         )
                     )
                 }
@@ -341,7 +342,7 @@ object SearchEngine {
 
         for ((granthaName, triple) in granthaTexts) {
             val (textContent, tags, booksRaw) = triple
-            if (!matchesTags(tags.lowercase(), granthaName.lowercase(), booksRaw.lowercase(), tagQueries, tagsLogic, negativeTagQueries)) {
+            if (!matchesTags(tags.lowercase(), granthaName.lowercase(), tagQueries, tagsLogic, negativeTagQueries)) {
                 searched++; onProgress?.invoke(searched, total, granthaName); continue
             }
 
@@ -350,30 +351,22 @@ object SearchEngine {
                 val prepared = prepareText(granthaName, textContent)
                 
                 if (textLogic == "and") {
-                    val matchesByTerm = mutableListOf<List<SearchResult>>()
+                    val allQueryResults = mutableListOf<SearchResult>()
+                    var hasAll = true
                     for (q in textQueries) {
                         val matches = smartSearchInternal(prepared, textContent, q, granthaName, subBooks, customRules, if (stopAtFirstMatch) 1 else maxPerBook, searchMode)
                         if (matches.isEmpty()) { 
-                            matchesByTerm.clear()
+                            hasAll = false
                             break 
                         }
-                        matchesByTerm.add(matches)
+                        allQueryResults.addAll(matches)
                     }
-                    
-                    if (matchesByTerm.size == textQueries.size && textQueries.isNotEmpty()) {
-                        val pagesPerTerm = matchesByTerm.map { termMatches -> 
-                            termMatches.map { it.page }.toSet()
-                        }
-                        
-                        val commonPages = pagesPerTerm.reduce { acc, set -> acc.intersect(set) }
-
-                        if (commonPages.isNotEmpty()) {
-                            val allValidMatches = matchesByTerm.flatten().filter { it.page in commonPages }
-                            if (stopAtFirstMatch) {
-                                allResults.add(allValidMatches.sortedBy { it.page }.first())
-                            } else {
-                                allResults.addAll(allValidMatches.sortedBy { it.page })
-                            }
+                    if (hasAll) {
+                        if (stopAtFirstMatch) {
+                            // If we only want one result, just take the first one found
+                            allResults.add(allQueryResults.first())
+                        } else {
+                            allResults.addAll(allQueryResults.sortedBy { it.page })
                         }
                     }
                 } else {
@@ -392,19 +385,18 @@ object SearchEngine {
     private fun matchesTags(
         tags: String,
         bookName: String,
-        booksRaw: String,
         tagQueries: List<String>,
         tagsLogic: String,
         negativeTagQueries: List<String>
     ): Boolean {
         if (negativeTagQueries.isNotEmpty()) {
-            if (negativeTagQueries.any { it in tags || it in bookName || it in booksRaw }) return false
+            if (negativeTagQueries.any { it in tags || it in bookName }) return false
         }
         if (tagQueries.isEmpty()) return true
         return if (tagsLogic == "and") {
-            tagQueries.all { it in tags || it in bookName || it in booksRaw }
+            tagQueries.all { it in tags || it in bookName }
         } else {
-            tagQueries.any { it in tags || it in bookName || it in booksRaw }
+            tagQueries.any { it in tags || it in bookName }
         }
     }
 

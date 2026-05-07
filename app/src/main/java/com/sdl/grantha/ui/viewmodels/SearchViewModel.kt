@@ -415,25 +415,11 @@ class SearchViewModel @Inject constructor(
                         val subBooks = SearchEngine.parseSubBooks(grantha.booksRaw)
                         val prepared = SearchEngine.prepareText(bookName, text)
                         
-                        val matchesByTerm = mutableListOf<List<SearchResult>>()
+                        val allSnippets = mutableListOf<SearchResult>()
                         for (q in textQueries) {
                              val activeRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null
                              val matches = SearchEngine.smartSearchInternal(prepared, text, q, bookName, subBooks, activeRules, state.maxPerBook, state.searchMode)
-                             if (state.textLogic == "and" && matches.isEmpty()) {
-                                 matchesByTerm.clear()
-                                 break
-                             }
-                             matchesByTerm.add(matches)
-                        }
-                        
-                        val allSnippets = if (state.textLogic == "and") {
-                            if (matchesByTerm.size == textQueries.size && textQueries.isNotEmpty()) {
-                                val pagesPerTerm = matchesByTerm.map { t -> t.map { it.page }.toSet() }
-                                val commonPages = pagesPerTerm.reduce { acc, set -> acc.intersect(set) }
-                                matchesByTerm.flatten().filter { it.page in commonPages }
-                            } else emptyList()
-                        } else {
-                            matchesByTerm.flatten()
+                             allSnippets.addAll(matches)
                         }
                         
                         var finalSnippets = allSnippets.sortedBy { it.page }
