@@ -89,7 +89,6 @@ class SearchViewModel @Inject constructor(
         }
 
         val q = cleanQuery.lowercase()
-        val suggestions = mutableListOf<Suggestion>()
 
         // Generate book and sub-book suggestions
         val filteredSuggestions = allGranthas.flatMap { grantha ->

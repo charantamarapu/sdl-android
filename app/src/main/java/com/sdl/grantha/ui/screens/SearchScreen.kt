@@ -2,11 +2,9 @@ package com.sdl.grantha.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -14,7 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,7 +36,9 @@ fun SearchScreen(
     var isTextFocused by remember { mutableStateOf(false) }
     var isTagsFocused by remember { mutableStateOf(false) }
     var isNegTagsFocused by remember { mutableStateOf(false) }
-    val isAnyFieldFocused = isTextFocused || isTagsFocused || isNegTagsFocused
+    val isAnyFieldFocused by remember { 
+        derivedStateOf { isTextFocused || isTagsFocused || isNegTagsFocused } 
+    }
     
     var showTextSuggestions by remember { mutableStateOf(false) }
     
@@ -47,9 +46,7 @@ fun SearchScreen(
     LaunchedEffect(Unit) {
         focusManager.clearFocus()
     }
-    Scaffold(
-        // TopAppBar removed as per user request
-    ) { padding ->
+    Scaffold { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -301,7 +298,7 @@ fun SearchScreen(
                                         expanded = showModeMenu,
                                         onDismissRequest = { showModeMenu = false }
                                     ) {
-                                        for (mode in SanskritUtils.SanskritSearchMode.values()) {
+                                        for (mode in SanskritUtils.SanskritSearchMode.entries) {
                                             DropdownMenuItem(
                                                 text = { 
                                                     Text(
@@ -640,7 +637,7 @@ fun SearchScreen(
                                 )
                             }
                         }
-                    } else if (!uiState.isDeepSearching) {
+                    } else {
                         item {
                             NoResultsView("No matches found inside this book")
                         }
