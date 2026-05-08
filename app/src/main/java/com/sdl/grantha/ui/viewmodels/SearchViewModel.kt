@@ -55,7 +55,8 @@ class SearchViewModel @Inject constructor(
         val negativeTagsQuery: String = "",
         val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList(),
         val suggestions: List<Suggestion> = emptyList(),
-        val directPageView: Boolean = false
+        val directPageView: Boolean = false,
+        val exactBookLock: String? = null
     )
 
     data class Suggestion(
@@ -90,32 +91,58 @@ class SearchViewModel @Inject constructor(
         val q = cleanQuery.lowercase()
         val suggestions = mutableListOf<Suggestion>()
 
-        // Add book suggestions
-        val bookSuggestions = allGranthas
-            .filter { it.name.lowercase().contains(q) }
-            .map { Suggestion(it.name, SuggestionType.BOOK) }
-        suggestions.addAll(bookSuggestions)
+        // Generate book and sub-book suggestions
+        val filteredSuggestions = allGranthas.flatMap { grantha ->
+            val matches = mutableListOf<Suggestion>()
+            
+            // 1. Direct book name match
+            if (grantha.name.contains(q, ignoreCase = true)) {
+                matches.add(Suggestion(grantha.name, SuggestionType.BOOK))
+            }
+            
+            // 2. Sub-book matches (always connected to parent)
+            val subbooks = repository.parseSubBooks(grantha.subbooksRaw)
+            subbooks.filter { it.name.contains(q, ignoreCase = true) }.forEach { sb ->
+                matches.add(Suggestion("${grantha.name} > ${sb.name}", SuggestionType.BOOK))
+            }
+            
+            matches
+        }
 
         // Add tag suggestions
         val tagSuggestions = allGranthas
             .flatMap { it.tags.split(",").map { t -> t.trim() } }
-            .filter { it.isNotBlank() && it.lowercase().contains(q) }
+            .filter { it.isNotBlank() && it.contains(q, ignoreCase = true) }
             .distinct()
             .map { Suggestion(it, SuggestionType.TAG) }
-        suggestions.addAll(tagSuggestions)
+        
+        val finalSuggestions = (filteredSuggestions + tagSuggestions).distinctBy { it.value }
 
-        _uiState.update { it.copy(suggestions = suggestions.take(10)) }
+        _uiState.update { it.copy(suggestions = finalSuggestions.take(15)) }
     }
 
     fun selectSuggestion(suggestion: Suggestion, target: String) {
+        // Handle hierarchical suggestions (Book > Sub-book)
+        var exactBook: String? = null
+        val valueToFill = if (suggestion.value.contains(" > ")) {
+            val parts = suggestion.value.split(" > ", limit = 2)
+            exactBook = parts[0]
+            suggestion.value
+        } else if (suggestion.type == SuggestionType.BOOK) {
+            exactBook = suggestion.value
+            suggestion.value
+        } else {
+            suggestion.value
+        }
+
         _uiState.update { state ->
             when (target) {
-                "text" -> state.copy(textQuery = suggestion.value, suggestions = emptyList())
+                "text" -> state.copy(textQuery = valueToFill, suggestions = emptyList(), exactBookLock = exactBook)
                 "tags" -> {
                     val parts = state.tagsQuery.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
                     if (parts.isNotEmpty()) parts.removeAt(parts.size - 1)
-                    parts.add(suggestion.value)
-                    state.copy(tagsQuery = parts.joinToString(", ") + ", ", suggestions = emptyList())
+                    parts.add(valueToFill)
+                    state.copy(tagsQuery = parts.joinToString(", ") + ", ", suggestions = emptyList(), exactBookLock = exactBook)
                 }
                 "negative" -> {
                     val parts = state.negativeTagsQuery.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
@@ -226,12 +253,14 @@ class SearchViewModel @Inject constructor(
             }
             try {
                 val allGranthas = repository.getAllGranthas().first()
-                val q = query.lowercase()
+                val queries = query.lowercase().split(",").map { it.trim() }.filter { it.isNotBlank() }
                 
                 val results = allGranthas.filter { grantha ->
-                    grantha.name.lowercase().contains(q) || 
-                    grantha.tags.lowercase().contains(q) ||
-                    grantha.subbooksRaw.lowercase().contains(q)
+                    queries.all { q ->
+                        grantha.name.lowercase().contains(q) || 
+                        grantha.tags.lowercase().contains(q) ||
+                        grantha.subbooksRaw.lowercase().contains(q)
+                    }
                 }
                 
                 _uiState.update { 
@@ -295,11 +324,17 @@ class SearchViewModel @Inject constructor(
                     val tagQueries = state.tagsQuery.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
                     val negTagQueries = state.negativeTagsQuery.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
 
-                    val totalBooks = downloaded.size
+                    val booksToSearch = if (state.exactBookLock != null && state.tagsQuery.contains(state.exactBookLock)) {
+                        downloaded.filter { it.name == state.exactBookLock }
+                    } else {
+                        downloaded
+                    }
+
+                    val totalBooks = booksToSearch.size
                     var booksProcessed = 0
 
                     val concurrency = Runtime.getRuntime().availableProcessors()
-                    downloaded.asFlow().flatMapMerge(concurrency = concurrency) { grantha ->
+                    booksToSearch.asFlow().flatMapMerge(concurrency = concurrency) { grantha ->
                         flow {
                             yield()
                             val text = if (SearchEngine.hasCache(grantha.name)) "" else repository.getGranthaText(grantha.name)

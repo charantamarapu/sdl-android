@@ -66,17 +66,25 @@ class LibraryViewModel @Inject constructor(
     ) { sort, asc, filterMode, query ->
         StateParams(sort, asc, filterMode, query)
     }.flatMapLatest { params ->
-        val baseFlow = if (params.query.isNotBlank()) {
-            repository.searchGranthas(params.query)
-        } else {
-            repository.getAllGranthas()
-        }
+        val baseFlow = repository.getAllGranthas()
 
         baseFlow.map { list ->
+            var filtered = list
+            if (params.query.isNotBlank()) {
+                val queries = params.query.lowercase().split(",").map { it.trim() }.filter { it.isNotBlank() }
+                filtered = filtered.filter { grantha ->
+                    queries.all { q ->
+                        grantha.name.lowercase().contains(q) || 
+                        grantha.tags.lowercase().contains(q) ||
+                        grantha.subbooksRaw.lowercase().contains(q)
+                    }
+                }
+            }
+            
             val filteredList = when (params.filterMode) {
-                LibraryFilter.ALL -> list
-                LibraryFilter.DOWNLOADED -> list.filter { it.isDownloaded }
-                LibraryFilter.NOT_DOWNLOADED -> list.filter { !it.isDownloaded }
+                LibraryFilter.ALL -> filtered
+                LibraryFilter.DOWNLOADED -> filtered.filter { it.isDownloaded }
+                LibraryFilter.NOT_DOWNLOADED -> filtered.filter { !it.isDownloaded }
             }
 
             // Apply sorting

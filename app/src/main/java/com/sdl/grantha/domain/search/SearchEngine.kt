@@ -224,9 +224,29 @@ object SearchEngine {
         subBooks: List<SubBookInfo>,
         customRules: List<Pair<String, String>>?,
         maxResults: Int,
-        searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS
+        searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS,
+        filterSubBooks: List<String> = emptyList()
     ): List<SearchResult> {
         if (query.isBlank()) return emptyList()
+
+        // 1. Determine allowed page ranges based on sub-book filters
+        val allowedRanges = if (filterSubBooks.isNotEmpty()) {
+            subBooks.filter { sb -> 
+                filterSubBooks.any { filter -> 
+                    if (filter.contains(">")) {
+                        val parts = filter.split(">").map { it.trim() }
+                        if (parts.size == 2) {
+                            // Only match if book name matches parts[0] AND sub-book matches parts[1]
+                            granthaName.contains(parts[0], ignoreCase = true) && sb.name.contains(parts[1], ignoreCase = true)
+                        } else false
+                    } else {
+                        sb.name.contains(filter, ignoreCase = true)
+                    }
+                }
+            }.map { it.startPage..it.endPage }
+        } else {
+            null
+        }
 
         val customVariants = SanskritUtils.getCustomVariants(query, customRules)
         val queryVariantsClean = customVariants
@@ -280,6 +300,14 @@ object SearchEngine {
                 }
 
                 val pageNum = getPageForIndex(origIdx, prepared.pageMap)
+                
+                // 2. Filter by allowed sub-book range if active
+                if (allowedRanges != null) {
+                    if (allowedRanges.none { pageNum in it }) {
+                        startPos = matchIdx + 1
+                        continue
+                    }
+                }
                 
                 val regionKey = (pageNum.toLong() shl 32) or (origIdx / 200).toLong()
                 if (regionKey !in seenRegions) {
@@ -341,7 +369,7 @@ object SearchEngine {
 
         for ((granthaName, triple) in granthaTexts) {
             val (textContent, tags, subbooksRaw) = triple
-            if (!matchesTags(tags.lowercase(), granthaName.lowercase(), tagQueries, negativeTagQueries)) {
+            if (!matchesTags(tags.lowercase(), granthaName.lowercase(), subbooksRaw.lowercase(), tagQueries, negativeTagQueries)) {
                 searched++; onProgress?.invoke(searched, total, granthaName); continue
             }
 
@@ -353,7 +381,11 @@ object SearchEngine {
                     val allQueryResults = mutableListOf<SearchResult>()
                     var hasAll = true
                     for (q in textQueries) {
-                        val matches = smartSearchInternal(prepared, textContent, q, granthaName, subBooks, customRules, if (stopAtFirstMatch) 1 else maxPerBook, searchMode)
+                        val matches = smartSearchInternal(
+                            prepared, textContent, q, granthaName, subBooks, customRules, 
+                            if (stopAtFirstMatch) 1 else maxPerBook, searchMode,
+                            filterSubBooks = tagQueries
+                        )
                         if (matches.isEmpty()) { 
                             hasAll = false
                             break 
@@ -370,7 +402,11 @@ object SearchEngine {
                     }
                 } else {
                     for (q in textQueries) {
-                        val matches = smartSearchInternal(prepared, textContent, q, granthaName, subBooks, customRules, if (stopAtFirstMatch) 1 else maxPerBook, searchMode)
+                        val matches = smartSearchInternal(
+                            prepared, textContent, q, granthaName, subBooks, customRules, 
+                            if (stopAtFirstMatch) 1 else maxPerBook, searchMode,
+                            filterSubBooks = tagQueries
+                        )
                         allResults.addAll(matches)
                         if (stopAtFirstMatch && matches.isNotEmpty()) break
                     }
@@ -385,14 +421,27 @@ object SearchEngine {
     private fun matchesTags(
         tags: String,
         bookName: String,
+        subbooksRaw: String,
         tagQueries: List<String>,
         negativeTagQueries: List<String>
     ): Boolean {
         if (negativeTagQueries.isNotEmpty()) {
-            if (negativeTagQueries.any { it in tags || it in bookName }) return false
+            if (negativeTagQueries.any { it in tags || it in bookName || it in subbooksRaw }) return false
         }
         if (tagQueries.isEmpty()) return true
-        return tagQueries.any { it in tags || it in bookName }
+        
+        return tagQueries.any { query ->
+            if (query.contains(">")) {
+                val parts = query.split(">").map { it.trim() }
+                if (parts.size == 2) {
+                    // Hierarchical match: left side must match book name AND right side must match sub-book/tags
+                    bookName.contains(parts[0], ignoreCase = true) && 
+                    (subbooksRaw.contains(parts[1], ignoreCase = true) || tags.contains(parts[1], ignoreCase = true))
+                } else false
+            } else {
+                query in tags || query in bookName || query in subbooksRaw
+            }
+        }
     }
 
     /**
