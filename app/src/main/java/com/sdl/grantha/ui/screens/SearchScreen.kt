@@ -588,9 +588,15 @@ fun SearchScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "$resultCount ${if (uiState.isAdvancedMode) "matches" else "books"} found",
+                            buildString {
+                                append("$resultCount ")
+                                append(if (uiState.isAdvancedMode) "matches" else "books")
+                                append(" found")
+                                if (uiState.limitReached) append(" (Limit reached)")
+                            },
                             style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            color = if (uiState.limitReached) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                         )
                         TextButton(onClick = { viewModel.clearResults() }) {
                             Text("Clear")

@@ -57,7 +57,8 @@ class SearchViewModel @Inject constructor(
         val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList(),
         val suggestions: List<Suggestion> = emptyList(),
         val directPageView: Boolean = false,
-        val exactBookLock: String? = null
+        val exactBookLock: String? = null,
+        val limitReached: Boolean = false
     )
 
     data class Suggestion(
@@ -232,7 +233,8 @@ class SearchViewModel @Inject constructor(
                     cachedBookSnippets = emptyMap(),
                     selectedBookResults = null,
                     bookSnippets = emptyList(),
-                    isOptionsExpanded = false
+                    isOptionsExpanded = false,
+                    limitReached = false
                 ) 
             }
             try {
@@ -287,7 +289,8 @@ class SearchViewModel @Inject constructor(
                     selectedBookResults = null,
                     bookSnippets = emptyList(),
                     hasSearched = false,
-                    isOptionsExpanded = false
+                    isOptionsExpanded = false,
+                    limitReached = false
                 ) 
             }
 
@@ -383,7 +386,7 @@ class SearchViewModel @Inject constructor(
                                 }
 
                                 if (state.directPageView && _uiState.value.results.size >= 500) {
-                                    _uiState.update { it.copy(currentBook = "Limit reached (500 matches)", searchProgress = 1f) }
+                                    _uiState.update { it.copy(currentBook = "Limit reached (500 matches)", searchProgress = 1f, limitReached = true) }
                                     searchJob?.cancel()
                                 }
                             }
@@ -419,7 +422,8 @@ class SearchViewModel @Inject constructor(
                 hasSearched = false, 
                 selectedBookResults = null,
                 bookSnippets = emptyList(),
-                cachedBookSnippets = emptyMap()
+                cachedBookSnippets = emptyMap(),
+                limitReached = false
             ) 
         }
     }
