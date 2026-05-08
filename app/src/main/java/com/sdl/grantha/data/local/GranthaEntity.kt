@@ -17,6 +17,7 @@ data class GranthaEntity(
     val sizeBytes: Long = 0,
     val pageCount: Int = 0,
     val checksum: String = "",
+    @androidx.room.ColumnInfo(name = "booksRaw")
     val subbooksRaw: String = "",
     // Local state
     val isDownloaded: Boolean = false,

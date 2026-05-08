@@ -82,12 +82,17 @@ fun LibraryScreen(
                             Icon(Icons.Filled.Info, contentDescription = "Selection Info")
                         }
                         // Toggle downloaded only
-                        IconButton(onClick = { viewModel.toggleDownloadedOnly() }) {
+                        IconButton(onClick = { viewModel.toggleFilterMode() }) {
                             Icon(
-                                if (uiState.showDownloadedOnly) Icons.Filled.FilterList else Icons.Outlined.FilterList,
-                                contentDescription = "Filter downloaded",
-                                tint = if (uiState.showDownloadedOnly) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                when (uiState.filterMode) {
+                                    LibraryViewModel.LibraryFilter.ALL -> Icons.Outlined.FilterList
+                                    LibraryViewModel.LibraryFilter.DOWNLOADED -> Icons.Filled.FilterList
+                                    LibraryViewModel.LibraryFilter.NOT_DOWNLOADED -> Icons.Filled.CloudOff
+                                },
+                                contentDescription = "Filter",
+                                tint = if (uiState.filterMode == LibraryViewModel.LibraryFilter.ALL) 
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                    else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -117,7 +122,7 @@ fun LibraryScreen(
             val visibleNotDownloaded = granthas.filter { !it.isDownloaded }.map { it.name }
             val allNotDownloadedCount = uiState.totalCount - uiState.downloadedCount
 
-            val isFiltered = uiState.searchQuery.isNotBlank() || uiState.showDownloadedOnly
+            val isFiltered = uiState.searchQuery.isNotBlank() || uiState.filterMode != LibraryViewModel.LibraryFilter.ALL
             
             if (isDownloading) {
                 ExtendedFloatingActionButton(

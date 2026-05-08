@@ -27,6 +27,7 @@ class LibraryViewModel @Inject constructor(
 ) : AndroidViewModel(application) {
 
     enum class SortOption { NAME, SIZE, PAGES }
+    enum class LibraryFilter { ALL, DOWNLOADED, NOT_DOWNLOADED }
 
     // UI state
     data class UiState(
@@ -35,7 +36,7 @@ class LibraryViewModel @Inject constructor(
         val error: String? = null,
         val sortOption: SortOption = SortOption.NAME,
         val isAscending: Boolean = true,
-        val showDownloadedOnly: Boolean = false,
+        val filterMode: LibraryFilter = LibraryFilter.ALL,
         val searchQuery: String = "",
         val selectedGranthas: Set<String> = emptySet(),
         val isSelectionMode: Boolean = false,
@@ -60,10 +61,10 @@ class LibraryViewModel @Inject constructor(
     val granthas: StateFlow<List<GranthaEntity>> = combine(
         _uiState.map { it.sortOption }.distinctUntilChanged(),
         _uiState.map { it.isAscending }.distinctUntilChanged(),
-        _uiState.map { it.showDownloadedOnly }.distinctUntilChanged(),
+        _uiState.map { it.filterMode }.distinctUntilChanged(),
         _uiState.map { it.searchQuery }.distinctUntilChanged()
-    ) { sort, asc, downloadedOnly, query ->
-        StateParams(sort, asc, downloadedOnly, query)
+    ) { sort, asc, filterMode, query ->
+        StateParams(sort, asc, filterMode, query)
     }.flatMapLatest { params ->
         val baseFlow = if (params.query.isNotBlank()) {
             repository.searchGranthas(params.query)
@@ -72,10 +73,10 @@ class LibraryViewModel @Inject constructor(
         }
 
         baseFlow.map { list ->
-            val filteredList = if (params.downloadedOnly) {
-                list.filter { it.isDownloaded }
-            } else {
-                list
+            val filteredList = when (params.filterMode) {
+                LibraryFilter.ALL -> list
+                LibraryFilter.DOWNLOADED -> list.filter { it.isDownloaded }
+                LibraryFilter.NOT_DOWNLOADED -> list.filter { !it.isDownloaded }
             }
 
             // Apply sorting
@@ -87,7 +88,7 @@ class LibraryViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private data class StateParams(val sort: SortOption, val asc: Boolean, val downloadedOnly: Boolean, val query: String)
+    private data class StateParams(val sort: SortOption, val asc: Boolean, val filterMode: LibraryFilter, val query: String)
 
     private data class Quadruple<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
@@ -175,12 +176,20 @@ class LibraryViewModel @Inject constructor(
         _uiState.update { it.copy(isAscending = !it.isAscending) }
     }
 
-    fun toggleDownloadedOnly() {
+    fun toggleFilterMode() {
         _uiState.update { 
-            val newValue = !it.showDownloadedOnly
+            val nextMode = when (it.filterMode) {
+                LibraryFilter.ALL -> LibraryFilter.DOWNLOADED
+                LibraryFilter.DOWNLOADED -> LibraryFilter.NOT_DOWNLOADED
+                LibraryFilter.NOT_DOWNLOADED -> LibraryFilter.ALL
+            }
             it.copy(
-                showDownloadedOnly = newValue,
-                syncMessage = if (newValue) "Showing downloaded books only" else "Showing all books"
+                filterMode = nextMode,
+                syncMessage = when (nextMode) {
+                    LibraryFilter.ALL -> "Showing all books"
+                    LibraryFilter.DOWNLOADED -> "Showing downloaded books"
+                    LibraryFilter.NOT_DOWNLOADED -> "Showing books not downloaded"
+                }
             )
         }
     }
@@ -352,7 +361,7 @@ class LibraryViewModel @Inject constructor(
             val result = repository.backupLibrary()
             result.fold(
                 onSuccess = { _ ->
-                    _uiState.update { it.copy(isSyncing = false, isBackingUp = false, syncMessage = "Backup successful to SDL_Backup folder") }
+                    _uiState.update { it.copy(isSyncing = false, isBackingUp = false, syncMessage = "Backup successful: SDL_Library_Backup.zip created in Downloads/SDL_Backup") }
                     syncCatalog(silent = true)
                 },
                 onFailure = { e ->

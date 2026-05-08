@@ -24,10 +24,10 @@ interface GranthaDao {
     @Query("SELECT * FROM granthas WHERE name = :name LIMIT 1")
     suspend fun getGranthaByName(name: String): GranthaEntity?
 
-    @Query("SELECT * FROM granthas WHERE name LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%' ORDER BY name ASC")
+    @Query("SELECT * FROM granthas WHERE name LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%' OR booksRaw LIKE '%' || :query || '%' ORDER BY name ASC")
     fun searchGranthas(query: String): Flow<List<GranthaEntity>>
 
-    @Query("SELECT * FROM granthas WHERE isDownloaded = 1 AND (name LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%') ORDER BY name ASC")
+    @Query("SELECT * FROM granthas WHERE isDownloaded = 1 AND (name LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%' OR booksRaw LIKE '%' || :query || '%') ORDER BY name ASC")
     fun searchDownloadedGranthas(query: String): Flow<List<GranthaEntity>>
 
     @Query("SELECT * FROM granthas WHERE isDownloaded = 1 AND (tags LIKE '%' || :tag || '%') ORDER BY name ASC")

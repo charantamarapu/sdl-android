@@ -54,7 +54,8 @@ class SearchViewModel @Inject constructor(
         val searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS,
         val negativeTagsQuery: String = "",
         val basicResults: List<com.sdl.grantha.data.local.GranthaEntity> = emptyList(),
-        val suggestions: List<Suggestion> = emptyList()
+        val suggestions: List<Suggestion> = emptyList(),
+        val directPageView: Boolean = false
     )
 
     data class Suggestion(
@@ -156,6 +157,10 @@ class SearchViewModel @Inject constructor(
         _uiState.update { it.copy(searchMode = mode) }
     }
 
+    fun setDirectPageView(enabled: Boolean) {
+        _uiState.update { it.copy(directPageView = enabled) }
+    }
+
 
     fun toggleTag(tag: String) {
         _uiState.update { state ->
@@ -226,7 +231,7 @@ class SearchViewModel @Inject constructor(
                 val results = allGranthas.filter { grantha ->
                     grantha.name.lowercase().contains(q) || 
                     grantha.tags.lowercase().contains(q) ||
-                    grantha.booksRaw.lowercase().contains(q)
+                    grantha.subbooksRaw.lowercase().contains(q)
                 }
                 
                 _uiState.update { 
@@ -307,7 +312,7 @@ class SearchViewModel @Inject constructor(
                                 return@flow
                             }
 
-                            val singleMap = mapOf(grantha.name to Triple(text, grantha.tags, grantha.booksRaw))
+                            val singleMap = mapOf(grantha.name to Triple(text, grantha.tags, grantha.subbooksRaw))
                             val partialResults = SearchEngine.searchAll(
                                 granthaTexts = singleMap,
                                 textQueries = textQueries,
@@ -315,9 +320,10 @@ class SearchViewModel @Inject constructor(
                                 tagQueries = tagQueries,
                                 negativeTagQueries = negTagQueries,
                                 customRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null,
-                                maxPerBook = state.maxPerBook,
-                                stopAtFirstMatch = true,
-                                searchMode = state.searchMode
+                                maxPerBook = if (state.directPageView) 20 else state.maxPerBook,
+                                stopAtFirstMatch = !state.directPageView,
+                                searchMode = state.searchMode,
+                                globalLimit = if (state.directPageView) 500 else 0
                             )
 
                             val highlighted = partialResults.map { result ->
@@ -408,7 +414,7 @@ class SearchViewModel @Inject constructor(
                     val text = if (SearchEngine.hasCache(bookName)) "" else repository.getGranthaText(bookName)
                     
                     if (grantha != null && text != null) {
-                        val subBooks = SearchEngine.parseSubBooks(grantha.booksRaw)
+                        val subBooks = SearchEngine.parseSubBooks(grantha.subbooksRaw)
                         val prepared = SearchEngine.prepareText(bookName, text)
                         
                         val allSnippets = mutableListOf<SearchResult>()

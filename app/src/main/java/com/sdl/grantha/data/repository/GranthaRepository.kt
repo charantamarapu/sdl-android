@@ -14,6 +14,11 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import com.sdl.grantha.BuildConfig
+import net.lingala.zip4j.ZipFile
+import net.lingala.zip4j.model.ZipParameters
+import net.lingala.zip4j.model.enums.AesKeyStrength
+import net.lingala.zip4j.model.enums.EncryptionMethod
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,6 +34,16 @@ class GranthaRepository @Inject constructor(
     private val downloadManager: GranthaDownloadManager,
     @ApplicationContext private val context: Context
 ) {
+
+    private fun getBackupPassword(): String {
+        // Derive a highly complex password from the internal SDL_KEY combined with a unique salt
+        // This ensures the zip is extremely difficult to crack even with brute force
+        val salt = "SDL_Vault_Secure_Salt_v1_2024_Sanskrit"
+        val combined = BuildConfig.SDL_KEY + salt
+        return java.security.MessageDigest.getInstance("SHA-256")
+            .digest(combined.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+    }
 
     // ======================== Catalog ========================
 
@@ -224,17 +239,29 @@ class GranthaRepository @Inject constructor(
             val backupDir = File(downloadsDir, "SDL_Backup")
             if (!backupDir.exists()) backupDir.mkdirs()
 
-            // Backup Granthas (Directly in SDL_Backup)
+            val backupFile = File(backupDir, "SDL_Library_Backup.zip")
+            if (backupFile.exists()) backupFile.delete()
+
             val granthasDir = File(context.filesDir, "granthas")
-            if (granthasDir.exists()) {
-                granthasDir.listFiles()?.forEach { file ->
-                    if (file.extension == "sdl") {
-                        file.copyTo(File(backupDir, file.name), overwrite = true)
-                    }
-                }
+            if (!granthasDir.exists() || granthasDir.listFiles().isNullOrEmpty()) {
+                return@withContext Result.failure(Exception("No downloaded books found to backup"))
             }
 
-            Result.success(backupDir.absolutePath)
+            val zipFile = ZipFile(backupFile, getBackupPassword().toCharArray())
+            val parameters = ZipParameters().apply {
+                isEncryptFiles = true
+                encryptionMethod = EncryptionMethod.ZIP_STANDARD
+                compressionMethod = net.lingala.zip4j.model.enums.CompressionMethod.STORE
+            }
+
+            val filesToBackup = granthasDir.listFiles { _, name -> name.endsWith(".sdl") }?.toList() ?: emptyList()
+            if (filesToBackup.isEmpty()) {
+                return@withContext Result.failure(Exception("No .sdl files found in library"))
+            }
+
+            zipFile.addFiles(filesToBackup, parameters)
+
+            Result.success(backupFile.absolutePath)
         } catch (e: Exception) {
             Log.e("GranthaRepository", "Backup failed", e)
             Result.failure(e)
@@ -248,33 +275,50 @@ class GranthaRepository @Inject constructor(
         try {
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val backupDir = File(downloadsDir, "SDL_Backup")
-            if (!backupDir.exists()) return@withContext Result.failure(Exception("Backup folder 'SDL_Backup' not found in Downloads"))
+            val backupFile = File(backupDir, "SDL_Library_Backup.zip")
+            
+            if (!backupFile.exists()) {
+                return@withContext Result.failure(Exception("Backup file 'SDL_Library_Backup.zip' not found in Downloads/SDL_Backup"))
+            }
 
-            // 1. Restore Granthas (From SDL_Backup directly)
             val granthasDir = File(context.filesDir, "granthas")
             if (!granthasDir.exists()) granthasDir.mkdirs()
 
+            val zipFile = ZipFile(backupFile, getBackupPassword().toCharArray())
+            if (!zipFile.isValidZipFile) {
+                return@withContext Result.failure(Exception("Invalid or corrupted backup file"))
+            }
+            
+            if (zipFile.isEncrypted) {
+                // Try to extract with key
+                zipFile.extractAll(granthasDir.absolutePath)
+            } else {
+                return@withContext Result.failure(Exception("Backup is not encrypted as expected"))
+            }
+
             var restoreCount = 0
-            backupDir.listFiles()?.forEach { file ->
-                // Look for .sdl files directly in the backup folder
-                if (file.extension == "sdl") {
-                    // Simply copy valid .sdl files (new Gzip format only)
-                    if (cryptoManager.isValidSdlFile(file)) {
-                        file.copyTo(File(granthasDir, file.name), overwrite = true)
-                        restoreCount++
-                    }
+            granthasDir.listFiles()?.forEach { file ->
+                if (file.extension == "sdl" && cryptoManager.isValidSdlFile(file)) {
+                    restoreCount++
                 }
             }
 
-            // 2. Sync Database with the restored files
-            // We need to match filenames (hashes) to book names in the catalog
+            // 2. Sync Database with the restored files in bulk
             val allGranthas = dao.getAllGranthasOnce()
-            allGranthas.forEach { grantha ->
+            val restoredEntities = allGranthas.mapNotNull { grantha ->
                 val expectedFileName = "${grantha.name.hashCode()}.sdl"
                 val file = File(granthasDir, expectedFileName)
                 if (file.exists()) {
-                    dao.markDownloaded(grantha.name, System.currentTimeMillis(), file.absolutePath)
-                }
+                    grantha.copy(
+                        isDownloaded = true,
+                        downloadDate = System.currentTimeMillis(),
+                        filePath = file.absolutePath
+                    )
+                } else null
+            }
+            
+            if (restoredEntities.isNotEmpty()) {
+                dao.insertAll(restoredEntities)
             }
 
             Result.success(restoreCount)

@@ -34,7 +34,8 @@ fun GranthaCard(
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
     onDownloadClick: () -> Unit = {},
-    onDeleteClick: () -> Unit = {}
+    onDeleteClick: () -> Unit = {},
+    showDeleteButton: Boolean = true
 ) {
     val backgroundColor by animateColorAsState(
         targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
@@ -136,12 +137,14 @@ fun GranthaCard(
             // Action button
             if (!isSelectionMode) {
                 if (grantha.isDownloaded) {
-                    IconButton(onClick = onDeleteClick) {
-                        Icon(
-                            Icons.Outlined.DeleteOutline,
-                            contentDescription = "Delete",
-                            tint = ErrorRed
-                        )
+                    if (showDeleteButton) {
+                        IconButton(onClick = onDeleteClick) {
+                            Icon(
+                                Icons.Outlined.DeleteOutline,
+                                contentDescription = "Delete",
+                                tint = ErrorRed
+                            )
+                        }
                     }
                 } else {
                     IconButton(onClick = onDownloadClick) {

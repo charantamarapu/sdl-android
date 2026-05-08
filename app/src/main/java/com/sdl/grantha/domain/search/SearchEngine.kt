@@ -332,6 +332,7 @@ object SearchEngine {
         maxPerBook: Int = 0,
         stopAtFirstMatch: Boolean = false,
         searchMode: SanskritUtils.SanskritSearchMode = SanskritUtils.SanskritSearchMode.CONTAINS,
+        globalLimit: Int = 0,
         onProgress: ((searched: Int, total: Int, bookName: String) -> Unit)? = null
     ): List<SearchResult> {
         val allResults = mutableListOf<SearchResult>()
@@ -376,8 +377,9 @@ object SearchEngine {
                 }
             }
             searched++; onProgress?.invoke(searched, total, granthaName)
+            if (globalLimit > 0 && allResults.size >= globalLimit) break
         }
-        return allResults
+        return if (globalLimit > 0) allResults.take(globalLimit) else allResults
     }
 
     private fun matchesTags(

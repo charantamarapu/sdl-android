@@ -268,17 +268,18 @@ fun SearchScreen(
                             ) {
                                 var showModeMenu by remember { mutableStateOf(false) }
                                 
-                                Box {
-                                    OutlinedCard(
-                                        onClick = { showModeMenu = true },
-                                        modifier = Modifier.width(135.dp),
-                                        shape = MaterialTheme.shapes.small
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 12.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.Center
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box {
+                                        OutlinedCard(
+                                            onClick = { showModeMenu = true },
+                                            modifier = Modifier.width(115.dp),
+                                            shape = MaterialTheme.shapes.small
                                         ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.Center
+                                            ) {
                                             Text(
                                                 when(uiState.searchMode) {
                                                     SanskritUtils.SanskritSearchMode.CONTAINS -> "Contains"
@@ -319,6 +320,14 @@ fun SearchScreen(
                                             )
                                         }
                                     }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "OR",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                    )
                                 }
 
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -446,14 +455,55 @@ fun SearchScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        // 1. Ungrouped Matches Toggle
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.GridView, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        "Show Ungrouped Matches",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                    Text(
+                                        "Show individual pages directly (max 500)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                
+                                var showUngroupedInfo by remember { mutableStateOf(false) }
+                                IconButton(
+                                    onClick = { showUngroupedInfo = true },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(Icons.Default.Info, contentDescription = "Help", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                
+                                if (showUngroupedInfo) {
+                                    AlertDialog(
+                                        onDismissRequest = { showUngroupedInfo = false },
+                                        title = { Text("Ungrouped Matches") },
+                                        text = { Text("This mode shows individual pages directly instead of grouping them by book. To maintain high search speed and reduce memory usage, it is limited to the first 500 matches found.") },
+                                        confirmButton = {
+                                            TextButton(onClick = { showUngroupedInfo = false }) { Text("OK") }
+                                        }
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = uiState.directPageView,
+                                onCheckedChange = { viewModel.setDirectPageView(it) }
+                            )
+                        }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Sanskrit Normalization Toggle
+                        // 2. Sanskrit Normalization Toggle
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -599,12 +649,24 @@ fun SearchScreen(
                     // Show the list of books found (each result here is the first match in a book)
                     items(
                         items = uiState.results,
-                        key = { "book_${it.granthaName}" }
+                        key = { result -> 
+                            if (uiState.directPageView) {
+                                "res_${result.granthaName}_${result.page}_${result.contextText.hashCode()}"
+                            } else {
+                                "book_${result.granthaName}"
+                            }
+                        }
                     ) { result ->
                         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                             SearchResultCard(
                                 result = result,
-                                onClick = { viewModel.selectBookForDeepSearch(result.granthaName) }
+                                onClick = { 
+                                    if (uiState.directPageView) {
+                                        onNavigateToReader(result.granthaName, result.page, uiState.textQuery)
+                                    } else {
+                                        viewModel.selectBookForDeepSearch(result.granthaName)
+                                    }
+                                }
                             )
                         }
                     }
@@ -624,7 +686,7 @@ fun SearchScreen(
                                 grantha = grantha,
                                 onClick = { onNavigateToReader(grantha.name, 1, uiState.textQuery) },
                                 onDownloadClick = { viewModel.downloadGrantha(grantha.name) },
-                                onDeleteClick = { viewModel.deleteGrantha(grantha.name) }
+                                showDeleteButton = false
                             )
                         }
                     }

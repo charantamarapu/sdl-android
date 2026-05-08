@@ -107,6 +107,9 @@ dependencies {
     // DataStore Preferences (for settings)
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
+    // Zip4j for password-protected backups
+    implementation("net.lingala.zip4j:zip4j:2.11.5")
+
     // Work Manager (optional, for background downloads)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
