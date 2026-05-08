@@ -362,23 +362,29 @@ class SearchViewModel @Inject constructor(
                             }
 
                             synchronized(this@SearchViewModel) {
-                                if (state.directPageView && _uiState.value.results.size >= 500) {
-                                    booksProcessed++
-                                    return@synchronized
-                                }
+                                val currentCount = _uiState.value.results.size
+                                if (state.directPageView && currentCount >= 500) return@synchronized
 
                                 booksProcessed++
-                                _uiState.update { 
-                                    val newResults = if (state.directPageView) {
-                                        (it.results + highlighted).take(500)
-                                    } else {
-                                        it.results + highlighted
+                                val resultsToAdd = if (state.directPageView) {
+                                    highlighted.take(500 - currentCount)
+                                } else {
+                                    highlighted
+                                }
+
+                                if (resultsToAdd.isNotEmpty() || booksProcessed % 5 == 0 || booksProcessed == totalBooks) {
+                                    _uiState.update { 
+                                        it.copy(
+                                            searchProgress = booksProcessed.toFloat() / totalBooks,
+                                            currentBook = grantha.name,
+                                            results = it.results + resultsToAdd
+                                        ) 
                                     }
-                                    it.copy(
-                                        searchProgress = booksProcessed.toFloat() / totalBooks,
-                                        currentBook = grantha.name,
-                                        results = newResults
-                                    ) 
+                                }
+
+                                if (state.directPageView && _uiState.value.results.size >= 500) {
+                                    _uiState.update { it.copy(currentBook = "Limit reached (500 matches)", searchProgress = 1f) }
+                                    searchJob?.cancel()
                                 }
                             }
                             emit(Unit)
