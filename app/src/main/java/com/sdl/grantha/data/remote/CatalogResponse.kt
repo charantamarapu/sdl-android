@@ -7,7 +7,8 @@ import com.google.gson.annotations.SerializedName
  */
 data class CatalogResponse(
     @SerializedName("granthas") val granthas: List<GranthaItem>,
-    @SerializedName("total") val total: Int
+    @SerializedName("total") val total: Int,
+
 )
 
 data class GranthaItem(

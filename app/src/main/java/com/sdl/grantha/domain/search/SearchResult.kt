@@ -10,5 +10,6 @@ data class SearchResult(
     val highlightedText: String = "",
     val subBook: String? = null,
     val isLimited: Boolean = false,
-    val matchOffset: Int = -1
+    val matchOffset: Int = -1,
+
 )

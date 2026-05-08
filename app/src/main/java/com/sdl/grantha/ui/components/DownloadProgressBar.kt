@@ -17,7 +17,8 @@ import com.sdl.grantha.ui.theme.ProgressAmber
 fun DownloadProgressBar(
     progress: Float,
     label: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = progress,

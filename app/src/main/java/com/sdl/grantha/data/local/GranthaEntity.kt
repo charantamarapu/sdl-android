@@ -22,5 +22,6 @@ data class GranthaEntity(
     // Local state
     val isDownloaded: Boolean = false,
     val downloadDate: Long? = null,
-    val filePath: String? = null
+    val filePath: String? = null,
+
 )

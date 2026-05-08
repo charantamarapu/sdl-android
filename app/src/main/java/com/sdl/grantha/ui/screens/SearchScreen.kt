@@ -28,7 +28,7 @@ import com.sdl.grantha.domain.search.SanskritUtils
 @Composable
 fun SearchScreen(
     onNavigateToReader: (String, Int, String?) -> Unit = { _, _, _ -> },
-    viewModel: SearchViewModel = hiltViewModel()
+    viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
@@ -110,7 +110,7 @@ fun SearchScreen(
                                 .fillMaxWidth()
                                 .onFocusChanged { focusState ->
                                     isTextFocused = focusState.isFocused
-                                    if (focusState.isFocused && !uiState.isOptionsExpanded) {
+                                    if (focusState.isFocused && (!uiState.isOptionsExpanded)) {
                                         viewModel.toggleOptionsExpanded()
                                     }
                                     if (!focusState.isFocused) showTextSuggestions = false
@@ -128,7 +128,9 @@ fun SearchScreen(
                             },
                             trailingIcon = {
                                 if (uiState.isSearching) {
-                                    IconButton(onClick = { viewModel.stopSearch() }) {
+                                    IconButton(
+                                        onClick = { viewModel.stopSearch() }
+                                    ) {
                                         Icon(
                                             Icons.Filled.Stop, 
                                             contentDescription = "Stop search",
@@ -136,10 +138,12 @@ fun SearchScreen(
                                         )
                                     }
                                 } else if (uiState.textQuery.isNotBlank()) {
-                                    IconButton(onClick = { 
-                                        viewModel.setTextQuery("")
-                                        showTextSuggestions = false
-                                    }) {
+                                    IconButton(
+                                        onClick = { 
+                                            viewModel.setTextQuery("")
+                                            showTextSuggestions = false
+                                        }
+                                    ) {
                                         Icon(Icons.Filled.Close, contentDescription = "Clear")
                                     }
                                 }
@@ -567,7 +571,7 @@ fun SearchScreen(
 
             // Results header
             val resultCount = if (uiState.isAdvancedMode) uiState.results.size else uiState.basicResults.size
-            if (resultCount > 0 || (uiState.hasSearched && !uiState.isSearching)) {
+            if (resultCount > 0 || (uiState.hasSearched && (!uiState.isSearching))) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)

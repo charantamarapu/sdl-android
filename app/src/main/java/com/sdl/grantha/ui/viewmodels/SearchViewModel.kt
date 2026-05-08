@@ -15,13 +15,14 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import java.util.Locale
 import javax.inject.Inject
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val repository: GranthaRepository,
-    private val application: android.app.Application
+    private val application: android.app.Application,
 ) : ViewModel() {
 
     data class UiState(
@@ -100,8 +101,8 @@ class SearchViewModel @Inject constructor(
             }
             
             // 2. Sub-book matches (always connected to parent)
-            val subbooks = repository.parseSubBooks(grantha.subbooksRaw)
-            subbooks.filter { it.name.contains(q, ignoreCase = true) }.forEach { sb ->
+            val subbooks: List<SearchEngine.SubBookInfo> = repository.parseSubBooks(grantha.subbooksRaw)
+            subbooks.filter { it.name.contains(q, ignoreCase = true) }.forEach { sb: SearchEngine.SubBookInfo ->
                 matches.add(Suggestion("${grantha.name} > ${sb.name}", SuggestionType.BOOK))
             }
             
@@ -109,11 +110,12 @@ class SearchViewModel @Inject constructor(
         }
 
         // Add tag suggestions
-        val tagSuggestions = allGranthas
+        val tagSuggestions = allGranthas.asSequence()
             .flatMap { it.tags.split(",").map { t -> t.trim() } }
             .filter { it.isNotBlank() && it.contains(q, ignoreCase = true) }
             .distinct()
             .map { Suggestion(it, SuggestionType.TAG) }
+            .toList()
         
         val finalSuggestions = (filteredSuggestions + tagSuggestions).distinctBy { it.value }
 
@@ -170,11 +172,6 @@ class SearchViewModel @Inject constructor(
         _uiState.update { it.copy(textLogic = logic) }
     }
 
-
-    fun setMaxPerBook(max: Int) {
-        _uiState.update { it.copy(maxPerBook = max) }
-    }
-
     fun toggleSanskritNormalize() {
         _uiState.update { it.copy(sanskritNormalize = !it.sanskritNormalize) }
     }
@@ -185,18 +182,6 @@ class SearchViewModel @Inject constructor(
 
     fun setDirectPageView(enabled: Boolean) {
         _uiState.update { it.copy(directPageView = enabled) }
-    }
-
-
-    fun toggleTag(tag: String) {
-        _uiState.update { state ->
-            val newTags = state.selectedTags.toMutableSet()
-            if (tag in newTags) newTags.remove(tag) else newTags.add(tag)
-            state.copy(
-                selectedTags = newTags,
-                tagsQuery = newTags.joinToString(",")
-            )
-        }
     }
 
     fun setCustomRulesText(text: String) {
@@ -256,9 +241,7 @@ class SearchViewModel @Inject constructor(
                 
                 val results = allGranthas.filter { grantha ->
                     queries.all { q ->
-                        grantha.name.lowercase().contains(q) || 
-                        grantha.tags.lowercase().contains(q) ||
-                        grantha.subbooksRaw.lowercase().contains(q)
+                        SearchEngine.matchesQuery(q, grantha.tags.lowercase(), grantha.name.lowercase(), grantha.subbooksRaw.lowercase())
                     }
                 }
                 
@@ -272,7 +255,7 @@ class SearchViewModel @Inject constructor(
                 }
                 val duration = System.currentTimeMillis() - startTime
                 val seconds = duration / 1000.0
-                android.widget.Toast.makeText(application, "Basic search took ${String.format("%.1f", seconds)}s", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(application, "Basic search took ${String.format(Locale.US, "%.1f", seconds)}s", android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 if (e !is CancellationException) {
                     _uiState.update { it.copy(isSearching = false, error = e.message ?: "Basic search failed") }
@@ -283,8 +266,7 @@ class SearchViewModel @Inject constructor(
 
     private fun executeAdvancedSearch() {
         val state = _uiState.value
-        val textQueriesRaw = state.textQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        val textQueries = textQueriesRaw
+        val textQueries = state.textQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
 
         if (textQueries.any { it.length < 2 }) {
             _uiState.update { it.copy(error = "Each search term must be at least 2 characters") }
@@ -355,7 +337,7 @@ class SearchViewModel @Inject constructor(
                                 negativeTagQueries = negTagQueries,
                                 customRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null,
                                 maxPerBook = if (state.directPageView) 20 else state.maxPerBook,
-                                stopAtFirstMatch = !state.directPageView,
+                                stopAtFirstMatch = (!state.directPageView),
                                 searchMode = state.searchMode,
                                 globalLimit = if (state.directPageView) 500 else 0
                             )
@@ -396,7 +378,7 @@ class SearchViewModel @Inject constructor(
 
                 _uiState.update { it.copy(isSearching = false, hasSearched = true, searchProgress = 1f) }
                 val duration = System.currentTimeMillis() - startTime
-                android.widget.Toast.makeText(application, "Search took ${String.format("%.1f", duration / 1000.0)}s", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(application, "Search took ${String.format(Locale.US, "%.1f", duration / 1000.0)}s", android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 if (e !is CancellationException) {
                     _uiState.update { it.copy(isSearching = false, error = e.message ?: "Search failed") }
@@ -452,11 +434,15 @@ class SearchViewModel @Inject constructor(
                         val prepared = SearchEngine.prepareText(bookName, text)
                         
                         val allSnippets = mutableListOf<SearchResult>()
-                        for (q in textQueries) {
-                             val activeRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null
-                             val matches = SearchEngine.smartSearchInternal(prepared, text, q, bookName, subBooks, activeRules, state.maxPerBook, state.searchMode)
-                             allSnippets.addAll(matches)
-                        }
+                         val tagQueries = state.tagsQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                         for (q in textQueries) {
+                              val activeRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null
+                              val matches = SearchEngine.smartSearchInternal(
+                                  prepared, text, q, bookName, subBooks, activeRules, state.maxPerBook, state.searchMode,
+                                  filterSubBooks = tagQueries
+                              )
+                              allSnippets.addAll(matches)
+                         }
                         
                         var finalSnippets = allSnippets.sortedBy { it.page }
                         if (finalSnippets.any { it.contextText == "MATCH_FOUND_WITHOUT_TEXT" }) {
@@ -524,17 +510,7 @@ class SearchViewModel @Inject constructor(
                 action = com.sdl.grantha.service.DownloadService.ACTION_DOWNLOAD
                 putStringArrayListExtra(com.sdl.grantha.service.DownloadService.EXTRA_GRANTHA_NAMES, arrayListOf(name))
             }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                application.startForegroundService(intent)
-            } else {
-                application.startService(intent)
-            }
-        }
-    }
-
-    fun deleteGrantha(name: String) {
-        viewModelScope.launch {
-            repository.deleteGrantha(name)
+            application.startForegroundService(intent)
         }
     }
 

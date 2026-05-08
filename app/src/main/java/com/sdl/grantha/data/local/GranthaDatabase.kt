@@ -21,7 +21,8 @@ abstract class GranthaDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     GranthaDatabase::class.java,
-                    "sdl_granthas.db"
+                    "sdl_granthas.db",
+
                 ).build()
                 INSTANCE = instance
                 instance

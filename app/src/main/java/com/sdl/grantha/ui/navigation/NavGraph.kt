@@ -16,7 +16,6 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.sdl.grantha.ui.screens.*
-import com.sdl.grantha.ui.theme.*
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -40,7 +39,7 @@ data class BottomNavItem(
     val screen: Screen,
     val label: String,
     val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector
+    val unselectedIcon: ImageVector,
 )
 
 val bottomNavItems = listOf(

@@ -18,7 +18,7 @@ import java.net.URLEncoder
 class GranthaDownloadManager(
     private val context: Context,
     private val api: MobileCatalogApi,
-    private val dao: GranthaDao
+    private val dao: GranthaDao,
 ) {
 
     data class DownloadProgress(
@@ -70,7 +70,7 @@ class GranthaDownloadManager(
             val encodedName = URLEncoder.encode(name, "UTF-8").replace("+", "%20")
             val response = api.downloadGrantha(encodedName)
 
-            if (!response.isSuccessful || response.body() == null) {
+            if ((!response.isSuccessful) || (response.body() == null)) {
                 _downloadProgress.value = DownloadProgress(name, 0, 0, error = "Server error: ${response.code()}")
                 return@withContext null
             }
@@ -97,8 +97,7 @@ class GranthaDownloadManager(
 
                         // Update bulk progress if part of a bulk download
                         if (totalBytesAll > 0) {
-                            val currentBulk = _bulkProgress.value
-                            if (currentBulk != null) {
+                            _bulkProgress.value?.let { currentBulk ->
                                 _bulkProgress.value = currentBulk.copy(
                                     overallProgress = (downloadedBytesBefore + bytesRead).toFloat() / totalBytesAll
                                 )

@@ -1,6 +1,5 @@
 package com.sdl.grantha.ui.viewmodels
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sdl.grantha.data.local.GranthaEntity
@@ -14,11 +13,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import javax.inject.Inject
 
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
-    private val repository: GranthaRepository
+    private val repository: GranthaRepository,
 ) : ViewModel() {
 
     data class UiState(
@@ -72,7 +72,7 @@ class ReaderViewModel @Inject constructor(
                                 // Lazy-calculate page text when needed, but for now we'll 
                                 // just pass the indices or extract the current one.
                                 // To minimize memory, we extract only the current one.
-                                if (index + 1 == startPage) {
+                                if ((index + 1) == startPage) {
                                     PageContent(index + 1, extractPageText(text, index + 1, prepared.pageMap))
                                 } else {
                                     PageContent(index + 1, "") // Placeholder
@@ -116,9 +116,6 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    private var fullTextCache: String? = null
-    private var pageMapCache: List<Pair<Int, Int>>? = null
-
     fun goToPage(page: Int) {
         val state = _uiState.value
         val maxPage = if (state.grantha?.isDownloaded == true) state.totalPages else 2000
@@ -152,21 +149,6 @@ class ReaderViewModel @Inject constructor(
         if (state.currentPage > 1) {
             goToPage(state.currentPage - 1)
         }
-    }
-
-    /**
-     * Get the archive.org page image URL for the current page.
-     * Uses the same URL pattern as the web app's reader.
-     */
-    fun getPageImageUrl(page: Int): String? {
-        val state = _uiState.value
-        val identifier = state.identifier
-        if (identifier.isBlank()) return null
-
-        // Archive.org leaf URL pattern
-        // The page parameter in our system is 1-based, archive.org leaf is 0-based
-        val leaf = page - 1
-        return "https://ia800${(identifier.hashCode() % 10 + 10) % 10}.us.archive.org/BookReader/BookReaderImages.php?zip=/0/items/$identifier/${identifier}_jp2.zip&file=${identifier}_jp2/${identifier}_${String.format("%04d", leaf)}.jp2&id=$identifier&scale=4&rotate=0"
     }
 
     /**

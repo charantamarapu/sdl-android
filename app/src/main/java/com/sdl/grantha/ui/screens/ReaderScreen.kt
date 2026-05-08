@@ -1,9 +1,11 @@
 package com.sdl.grantha.ui.screens
 
+import android.annotation.SuppressLint
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -13,26 +15,29 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sdl.grantha.ui.viewmodels.ReaderViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun ReaderScreen(
     granthaName: String,
     startPage: Int = 1,
     highlightQuery: String? = null,
     onBack: () -> Unit = {},
-    viewModel: ReaderViewModel = hiltViewModel()
+    viewModel: ReaderViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showPageImage by remember { mutableStateOf(false) }
+    var showPageImage by remember { mutableStateOf(uiState.grantha?.isDownloaded != true) }
     var goToPageText by remember { mutableStateOf("") }
     var showGoToDialog by remember { mutableStateOf(false) }
 
@@ -43,7 +48,7 @@ fun ReaderScreen(
 
     // Default to Archive view for non-downloaded books
     LaunchedEffect(uiState.grantha) {
-        if (uiState.grantha != null && !uiState.grantha!!.isDownloaded) {
+        if (uiState.grantha != null && (!uiState.grantha!!.isDownloaded)) {
             showPageImage = true
         }
     }
@@ -181,10 +186,9 @@ fun ReaderScreen(
                                     loadUrl(readerUrl)
                                 }
                             },
-                            update = { webView ->
-                                webView.loadUrl(readerUrl)
-                            }
-                        )
+                        ) { webView ->
+                            webView.loadUrl(readerUrl)
+                        }
                     } else {
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -202,10 +206,12 @@ fun ReaderScreen(
                         val text = currentPageContent.text
                         
                         val annotatedString = remember(text, uiState.highlightQuery) {
-                            androidx.compose.ui.text.buildAnnotatedString {
+                            buildAnnotatedString {
                                 append(text)
                                 if (!uiState.highlightQuery.isNullOrBlank()) {
-                                    val queries = uiState.highlightQuery!!.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                                    val queries = uiState.highlightQuery!!.split(",")
+                                        .map { it.trim() }
+                                        .filter { it.isNotBlank() }
                                     val noisePattern = "[\\s\\-]*"
                                     
                                     queries.forEach { q ->
@@ -224,9 +230,9 @@ fun ReaderScreen(
                                             val regex = Regex(regexString, RegexOption.IGNORE_CASE)
                                             regex.findAll(text).forEach { match ->
                                                 addStyle(
-                                                    style = androidx.compose.ui.text.SpanStyle(
-                                                        background = androidx.compose.ui.graphics.Color.Yellow.copy(alpha = 0.4f),
-                                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                                    style = SpanStyle(
+                                                        background = Color.Yellow.copy(alpha = 0.4f),
+                                                        fontWeight = FontWeight.Bold
                                                     ),
                                                     start = match.range.first,
                                                     end = match.range.last + 1
@@ -285,11 +291,13 @@ fun ReaderScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    goToPageText.toIntOrNull()?.let { viewModel.goToPage(it) }
-                    showGoToDialog = false
-                    goToPageText = ""
-                }) {
+                TextButton(
+                    onClick = {
+                        goToPageText.toIntOrNull()?.let { viewModel.goToPage(it) }
+                        showGoToDialog = false
+                        goToPageText = ""
+                    }
+                ) {
                     Text("Go")
                 }
             },

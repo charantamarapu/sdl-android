@@ -7,7 +7,6 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.sdl.grantha.MainActivity
-import com.sdl.grantha.R
 import com.sdl.grantha.data.repository.GranthaRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -58,11 +57,11 @@ class DownloadService : Service() {
                     // Update notification from progress flow
                     val progressJob = launch {
                         repository.getBulkProgress().collect { progress ->
-                            if (progress != null && !progress.isComplete) {
+                            if (progress != null && (!progress.isComplete)) {
                                 updateNotification(
                                     "Downloading: ${progress.currentGrantha} (${progress.currentIndex + 1}/${progress.totalCount})",
                                     progress.currentIndex,
-                                    progress.totalCount
+                                    progress.totalCount,
                                 )
                             }
                         }

@@ -1,11 +1,8 @@
 package com.sdl.grantha.data.crypto
 
-import org.json.JSONObject
 import java.io.File
 import java.util.zip.GZIPInputStream
-import java.util.zip.GZIPOutputStream
 import com.github.luben.zstd.ZstdInputStream
-import com.github.luben.zstd.ZstdOutputStream
 
 /**
  * Manages storage and retrieval of .sdl grantha files.
@@ -21,14 +18,6 @@ class SdlCryptoManager {
         private const val MAGIC = "SDL"
         private const val VERSION_GZIP: Byte = 0x02
         private const val VERSION_ZSTD: Byte = 0x03
-    }
-
-    /**
-     * Get basic metadata from an .sdl file.
-     */
-    fun decryptMetadata(sdlFile: File): JSONObject {
-        // v2 doesn't pack metadata in the file (it's in the DB)
-        return JSONObject().put("name", sdlFile.nameWithoutExtension)
     }
 
     /**
@@ -63,22 +52,6 @@ class SdlCryptoManager {
     }
 
     /**
-     * Helper to save a text as a Zstd .sdl file (v3).
-     */
-    fun saveAsZstdSdl(text: String, outputFile: File) {
-        outputFile.outputStream().use { fos ->
-            // Write Header: SDL + Version 0x03
-            fos.write(MAGIC.toByteArray(Charsets.US_ASCII))
-            fos.write(VERSION_ZSTD.toInt())
-            
-            // Write Zstd compressed content
-            ZstdOutputStream(fos).use { zos ->
-                zos.write(text.toByteArray(Charsets.UTF_8))
-            }
-        }
-    }
-
-    /**
      * Check if a file is a valid SDL v2 or v3 file.
      */
     fun isValidSdlFile(file: File): Boolean {
@@ -89,7 +62,7 @@ class SdlCryptoManager {
             val magic = String(header, 0, 3, Charsets.US_ASCII)
             val version = header[3]
             magic == MAGIC && (version == VERSION_GZIP || version == VERSION_ZSTD)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }

@@ -2,9 +2,9 @@ package com.sdl.grantha.ui.viewmodels
 
 import android.app.Application
 import android.content.Intent
+import java.util.Locale
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.sdl.grantha.data.download.GranthaDownloadManager
 import com.sdl.grantha.data.local.GranthaEntity
 import com.sdl.grantha.data.repository.GranthaRepository
 import com.sdl.grantha.service.DownloadService
@@ -98,8 +98,6 @@ class LibraryViewModel @Inject constructor(
 
     private data class StateParams(val sort: SortOption, val asc: Boolean, val filterMode: LibraryFilter, val query: String)
 
-    private data class Quadruple<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
-
     // Download progress
     val downloadProgress = repository.getDownloadProgress()
     val bulkProgress = repository.getBulkProgress()
@@ -135,7 +133,7 @@ class LibraryViewModel @Inject constructor(
 
         repository.getDownloadedSizeBytesFlow()
             .onEach { bytes -> 
-                val sizeMb = String.format("%.1f", bytes / (1024.0 * 1024.0))
+                val sizeMb = String.format(Locale.US, "%.1f", bytes / (1024.0 * 1024.0))
                 _uiState.update { it.copy(downloadedSizeMb = sizeMb) } 
             }
             .launchIn(viewModelScope)
@@ -301,7 +299,7 @@ class LibraryViewModel @Inject constructor(
         val all = repository.getAllGranthasOnce()
         val target = all.filter { it.name in names }
         val totalBytes = target.sumOf { it.sizeBytes }
-        return "%.2f".format(totalBytes / (1024.0 * 1024.0))
+        return String.format(Locale.US, "%.2f", totalBytes / (1024.0 * 1024.0))
     }
 
     fun downloadSingle(name: String) {

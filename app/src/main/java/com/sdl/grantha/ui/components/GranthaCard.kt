@@ -1,5 +1,6 @@
 package com.sdl.grantha.ui.components
 
+import java.util.Locale
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
@@ -22,7 +23,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sdl.grantha.data.local.GranthaEntity
 import com.sdl.grantha.ui.theme.*
-import java.util.Locale
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -35,7 +35,7 @@ fun GranthaCard(
     onLongClick: () -> Unit = {},
     onDownloadClick: () -> Unit = {},
     onDeleteClick: () -> Unit = {},
-    showDeleteButton: Boolean = true
+    showDeleteButton: Boolean = true,
 ) {
     val backgroundColor by animateColorAsState(
         targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
@@ -163,7 +163,7 @@ fun GranthaCard(
 private fun formatSize(bytes: Long): String {
     return when {
         bytes < 1024 -> "$bytes B"
-        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-        else -> String.format(Locale.getDefault(), "%.1f MB", bytes / (1024.0 * 1024.0))
+        bytes < (1024 * 1024) -> "${bytes / 1024} KB"
+        else -> String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
     }
 }

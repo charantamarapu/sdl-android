@@ -50,7 +50,7 @@ object SearchEngine {
     class PreparedText(
         val cleanString: String,
         val mapper: IndexMapper,
-        val pageMap: List<Pair<Int, Int>>
+        val pageMap: List<Pair<Int, Int>>,
     )
 
     // Hybrid cache: Hard references for the 3 most recent books, Soft for others
@@ -94,7 +94,8 @@ object SearchEngine {
         while (i < textLen) {
             val ch = textContent[i]
 
-            if (ch == '{' && i + 5 < textLen && textContent[i+1] == '[' && textContent[i+2] == '(') {
+            if (ch == '{' && i + 5 < textLen && (textContent[i + 1] == '[') && (textContent[i + 2] == '(')) {
+
                 val end = textContent.indexOf(")]}", i + 3)
                 if (end != -1) {
                     val pageStr = textContent.substring(i + 3, end)
@@ -139,8 +140,7 @@ object SearchEngine {
         synchronized(hardCache) {
             if (hardCache.size >= MAX_HARD_CACHE) {
                 val firstKey = hardCache.keys.first()
-                val removed = hardCache.remove(firstKey)
-                if (removed != null) {
+                hardCache.remove(firstKey)?.let { removed ->
                     softCache[firstKey] = java.lang.ref.SoftReference(removed)
                 }
             }
@@ -170,8 +170,8 @@ object SearchEngine {
     fun getPageForIndex(index: Int, pageMap: List<Pair<Int, Int>>): Int {
         var currentPage = 0
         for ((startPos, pageNum) in pageMap) {
-            if (startPos <= index) {
-                currentPage = pageNum
+            currentPage = if (startPos <= index) {
+                pageNum
             } else {
                 break
             }
@@ -231,7 +231,7 @@ object SearchEngine {
 
         // 1. Determine allowed page ranges based on sub-book filters
         val allowedRanges = if (filterSubBooks.isNotEmpty()) {
-            subBooks.filter { sb -> 
+            subBooks.asSequence().filter { sb -> 
                 filterSubBooks.any { filter -> 
                     if (filter.contains(">")) {
                         val parts = filter.split(">").map { it.trim() }
@@ -243,7 +243,7 @@ object SearchEngine {
                         sb.name.contains(filter, ignoreCase = true)
                     }
                 }
-            }.map { it.startPage..it.endPage }
+            }.map { it.startPage..it.endPage }.toList()
         } else {
             null
         }
@@ -418,7 +418,20 @@ object SearchEngine {
         return if (globalLimit > 0) allResults.take(globalLimit) else allResults
     }
 
-    private fun matchesTags(
+    fun matchesQuery(query: String, tags: String, bookName: String, subbooksRaw: String): Boolean {
+        if (query.contains(">")) {
+            val parts = query.split(">").map { it.trim() }
+            if (parts.size == 2) {
+                // Hierarchical match: left side must match book name AND right side must match sub-book/tags
+                return bookName.contains(parts[0], ignoreCase = true) && 
+                       (subbooksRaw.contains(parts[1], ignoreCase = true) || tags.contains(parts[1], ignoreCase = true))
+            }
+            return false
+        }
+        return query in tags || query in bookName || query in subbooksRaw
+    }
+
+    fun matchesTags(
         tags: String,
         bookName: String,
         subbooksRaw: String,
@@ -426,21 +439,12 @@ object SearchEngine {
         negativeTagQueries: List<String>
     ): Boolean {
         if (negativeTagQueries.isNotEmpty()) {
-            if (negativeTagQueries.any { it in tags || it in bookName || it in subbooksRaw }) return false
+            if (negativeTagQueries.any { matchesQuery(it, tags, bookName, subbooksRaw) }) return false
         }
         if (tagQueries.isEmpty()) return true
         
         return tagQueries.any { query ->
-            if (query.contains(">")) {
-                val parts = query.split(">").map { it.trim() }
-                if (parts.size == 2) {
-                    // Hierarchical match: left side must match book name AND right side must match sub-book/tags
-                    bookName.contains(parts[0], ignoreCase = true) && 
-                    (subbooksRaw.contains(parts[1], ignoreCase = true) || tags.contains(parts[1], ignoreCase = true))
-                } else false
-            } else {
-                query in tags || query in bookName || query in subbooksRaw
-            }
+            matchesQuery(query, tags, bookName, subbooksRaw)
         }
     }
 

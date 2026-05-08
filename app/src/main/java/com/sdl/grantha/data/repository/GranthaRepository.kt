@@ -8,6 +8,7 @@ import com.sdl.grantha.data.download.GranthaDownloadManager
 import com.sdl.grantha.data.local.GranthaDao
 import com.sdl.grantha.data.local.GranthaEntity
 import com.sdl.grantha.data.remote.MobileCatalogApi
+import com.sdl.grantha.domain.search.SearchEngine
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -17,7 +18,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import com.sdl.grantha.BuildConfig
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
-import net.lingala.zip4j.model.enums.AesKeyStrength
 import net.lingala.zip4j.model.enums.EncryptionMethod
 import java.io.File
 import javax.inject.Inject
@@ -32,7 +32,7 @@ class GranthaRepository @Inject constructor(
     private val dao: GranthaDao,
     private val cryptoManager: SdlCryptoManager,
     private val downloadManager: GranthaDownloadManager,
-    @ApplicationContext private val context: Context
+    @field:ApplicationContext private val context: Context
 ) {
 
     private fun getBackupPassword(): String {
@@ -114,18 +114,7 @@ class GranthaRepository @Inject constructor(
 
     fun getDownloadedGranthas(): Flow<List<GranthaEntity>> = dao.getDownloadedGranthas()
 
-    fun searchGranthas(query: String): Flow<List<GranthaEntity>> = dao.searchGranthas(query)
-
-    fun searchDownloadedGranthas(query: String): Flow<List<GranthaEntity>> =
-        dao.searchDownloadedGranthas(query)
-
     suspend fun getGranthaByName(name: String): GranthaEntity? = dao.getGranthaByName(name)
-
-    suspend fun getTotalCount(): Int = dao.getTotalCount()
-
-    suspend fun getDownloadedCount(): Int = dao.getDownloadedCount()
-
-    suspend fun getDownloadedSizeBytes(): Long = dao.getDownloadedSizeBytes() ?: 0L
 
     fun getTotalCountFlow(): Flow<Int> = dao.getTotalCountFlow()
 
@@ -159,8 +148,6 @@ class GranthaRepository @Inject constructor(
     fun cancelDownloads() = downloadManager.cancelDownloads()
 
     fun resetCancel() = downloadManager.resetCancel()
-
-    fun isCancelled() = downloadManager.isCancelled()
 
     fun getDownloadProgress() = downloadManager.downloadProgress
 
@@ -352,7 +339,7 @@ class GranthaRepository @Inject constructor(
             withTimeoutOrNull(60000L) {
                 cryptoManager.decryptText(file)
             }
-        } catch (e: TimeoutCancellationException) {
+        } catch (_: TimeoutCancellationException) {
             Log.w("GranthaRepository", "Decryption timeout for book: $name")
             null
         } catch (e: OutOfMemoryError) {
@@ -370,29 +357,7 @@ class GranthaRepository @Inject constructor(
      * Parse sub-books from the subbooksRaw field.
      * Format: "1-50:BookName1, 51-120:BookName2"
      */
-    fun parseSubBooks(subbooksRaw: String): List<SubBook> {
-        if (subbooksRaw.isBlank()) return emptyList()
-        return subbooksRaw.split(",").mapNotNull { entry ->
-            val trimmed = entry.trim()
-            val colonIdx = trimmed.indexOf(':')
-            if (colonIdx < 0) return@mapNotNull null
-            val rangePart = trimmed.substring(0, colonIdx).trim()
-            val name = trimmed.substring(colonIdx + 1).trim()
-            if (name.isBlank()) return@mapNotNull null
-
-            try {
-                if ('-' in rangePart) {
-                    val (start, end) = rangePart.split('-', limit = 2).map { it.trim().toInt() }
-                    SubBook(start, end, name)
-                } else {
-                    val page = rangePart.toInt()
-                    SubBook(page, page, name)
-                }
-            } catch (e: Exception) {
-                null
-            }
-        }
+    fun parseSubBooks(subbooksRaw: String): List<SearchEngine.SubBookInfo> {
+        return SearchEngine.parseSubBooks(subbooksRaw)
     }
-
-    data class SubBook(val startPage: Int, val endPage: Int, val name: String)
 }

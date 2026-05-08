@@ -20,8 +20,8 @@ import com.sdl.grantha.ui.theme.*
 @Composable
 fun SearchResultCard(
     result: SearchResult,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
-    modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
@@ -96,8 +96,7 @@ fun SearchResultCard(
             // Context text with highlights
             // The highlighted text uses 【】 markers from SearchEngine
             val displayText = formatHighlightedText(
-                if (result.highlightedText.isNotBlank()) result.highlightedText
-                else result.contextText
+                result.highlightedText.ifBlank { result.contextText }
             )
 
             SelectionContainer {
