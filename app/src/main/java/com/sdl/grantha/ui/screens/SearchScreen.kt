@@ -103,8 +103,12 @@ fun SearchScreen(
                             value = uiState.textQuery,
                             onValueChange = { 
                                 viewModel.setTextQuery(it)
-                                viewModel.updateSuggestions(it, "text")
-                                showTextSuggestions = it.length >= 2
+                                if (!uiState.isAdvancedMode) {
+                                    viewModel.updateSuggestions(it, "text")
+                                    showTextSuggestions = it.length >= 2
+                                } else {
+                                    showTextSuggestions = false
+                                }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()

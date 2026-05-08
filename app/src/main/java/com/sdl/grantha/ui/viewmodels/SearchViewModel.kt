@@ -336,7 +336,7 @@ class SearchViewModel @Inject constructor(
                                 tagQueries = tagQueries,
                                 negativeTagQueries = negTagQueries,
                                 customRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null,
-                                maxPerBook = if (state.directPageView) 20 else state.maxPerBook,
+                                maxPerBook = if (state.directPageView) 500 else state.maxPerBook,
                                 stopAtFirstMatch = (!state.directPageView),
                                 searchMode = state.searchMode,
                                 globalLimit = if (state.directPageView) 500 else 0
@@ -362,12 +362,22 @@ class SearchViewModel @Inject constructor(
                             }
 
                             synchronized(this@SearchViewModel) {
+                                if (state.directPageView && _uiState.value.results.size >= 500) {
+                                    booksProcessed++
+                                    return@synchronized
+                                }
+
                                 booksProcessed++
                                 _uiState.update { 
+                                    val newResults = if (state.directPageView) {
+                                        (it.results + highlighted).take(500)
+                                    } else {
+                                        it.results + highlighted
+                                    }
                                     it.copy(
                                         searchProgress = booksProcessed.toFloat() / totalBooks,
                                         currentBook = grantha.name,
-                                        results = it.results + highlighted
+                                        results = newResults
                                     ) 
                                 }
                             }
@@ -495,7 +505,8 @@ class SearchViewModel @Inject constructor(
         _uiState.update { 
             it.copy(
                 isAdvancedMode = isAdvanced,
-                isOptionsExpanded = if (isAdvanced && it.results.isEmpty()) true else it.isOptionsExpanded
+                isOptionsExpanded = if (isAdvanced && it.results.isEmpty()) true else it.isOptionsExpanded,
+                suggestions = emptyList()
             ) 
         }
     }
