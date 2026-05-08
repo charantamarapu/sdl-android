@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sdl.grantha.ui.viewmodels.ReaderViewModel
@@ -243,10 +244,12 @@ fun ReaderScreen(
                                 .verticalScroll(rememberScrollState())
                                 .padding(16.dp)
                         ) {
-                            Text(
-                                text = annotatedString,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
+                            SelectionContainer {
+                                Text(
+                                    text = annotatedString,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
                         }
                     } else {
                         Box(
