@@ -37,7 +37,7 @@ fun ReaderScreen(
     viewModel: ReaderViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showPageImage by remember { mutableStateOf(uiState.grantha?.isDownloaded != true) }
+    var showPageImage by remember { mutableStateOf(false) }
     var goToPageText by remember { mutableStateOf("") }
     var showGoToDialog by remember { mutableStateOf(false) }
 
@@ -46,10 +46,12 @@ fun ReaderScreen(
         viewModel.loadGrantha(granthaName, startPage, highlightQuery)
     }
 
-    // Default to Archive view for non-downloaded books
+    // If we find the book is not downloaded, we must show the Archive image view
     LaunchedEffect(uiState.grantha) {
-        if (uiState.grantha != null && (!uiState.grantha!!.isDownloaded)) {
-            showPageImage = true
+        uiState.grantha?.let {
+            if (!it.isDownloaded) {
+                showPageImage = true
+            }
         }
     }
 
