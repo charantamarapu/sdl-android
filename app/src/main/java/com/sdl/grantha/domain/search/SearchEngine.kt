@@ -230,7 +230,7 @@ object SearchEngine {
         if (query.isBlank()) return emptyList()
 
         // 1. Determine allowed page ranges based on sub-book filters
-        val allowedRanges = if (filterSubBooks.isNotEmpty()) {
+        val allowedRangesRaw = if (filterSubBooks.isNotEmpty()) {
             subBooks.asSequence().filter { sb -> 
                 filterSubBooks.any { filter -> 
                     if (filter.contains(">")) {
@@ -247,6 +247,11 @@ object SearchEngine {
         } else {
             null
         }
+        
+        // If filters were provided but none matched a sub-book name, 
+        // it means the filters matched the book's tags/name instead.
+        // In this case, we search the whole book.
+        val allowedRanges = if (allowedRangesRaw != null && allowedRangesRaw.isEmpty()) null else allowedRangesRaw
 
         val customVariants = SanskritUtils.getCustomVariants(query, customRules)
         val queryVariantsClean = customVariants

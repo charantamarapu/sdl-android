@@ -454,7 +454,7 @@ class SearchViewModel @Inject constructor(
                         val prepared = SearchEngine.prepareText(bookName, text)
                         
                         val allSnippets = mutableListOf<SearchResult>()
-                         val tagQueries = state.tagsQuery.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                        val tagQueries = state.tagsQuery.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
                          for (q in textQueries) {
                               val activeRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null
                               val matches = SearchEngine.smartSearchInternal(
