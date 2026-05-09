@@ -590,7 +590,7 @@ fun SearchScreen(
                         Text(
                             buildString {
                                 append("$resultCount ")
-                                append(if (uiState.isAdvancedMode) "matches" else "books")
+                                append(if (uiState.isAdvancedMode && (uiState.directPageView || uiState.matchingCount == 1)) "matches" else "books")
                                 append(" found")
                                 if (uiState.limitReached) append(" (Limit reached)")
                             },
@@ -661,7 +661,7 @@ fun SearchScreen(
                     items(
                         items = uiState.results,
                         key = { result -> 
-                            if (uiState.directPageView) {
+                            if (uiState.directPageView || uiState.matchingCount == 1) {
                                 "res_${result.granthaName}_${result.page}_${result.contextText.hashCode()}"
                             } else {
                                 "book_${result.granthaName}"
@@ -672,7 +672,7 @@ fun SearchScreen(
                             SearchResultCard(
                                 result = result,
                                 onClick = { 
-                                    if (uiState.directPageView) {
+                                    if (uiState.directPageView || uiState.matchingCount == 1) {
                                         onNavigateToReader(result.granthaName, result.page, uiState.textQuery)
                                     } else {
                                         viewModel.selectBookForDeepSearch(result.granthaName)
