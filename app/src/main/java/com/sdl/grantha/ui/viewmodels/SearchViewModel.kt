@@ -58,7 +58,8 @@ class SearchViewModel @Inject constructor(
         val suggestions: List<Suggestion> = emptyList(),
         val directPageView: Boolean = false,
         val exactBookLock: String? = null,
-        val limitReached: Boolean = false
+        val limitReached: Boolean = false,
+        val matchingCount: Int = 0
     )
 
     data class Suggestion(
@@ -290,7 +291,8 @@ class SearchViewModel @Inject constructor(
                     bookSnippets = emptyList(),
                     hasSearched = false,
                     isOptionsExpanded = false,
-                    limitReached = false
+                    limitReached = false,
+                    matchingCount = 0
                 ) 
             }
 
@@ -314,13 +316,12 @@ class SearchViewModel @Inject constructor(
                         downloaded
                     }
 
-                    // Determine if we are in "single book mode" (only one book matches the tags/name)
-                    // If so, we'll fetch all matches in that book directly like the web app does.
                     val matchingBooksByTags = booksToSearch.filter { grantha ->
                         SearchEngine.matchesTags(grantha.tags.lowercase(), grantha.name.lowercase(), grantha.subbooksRaw.lowercase(), tagQueries, negTagQueries)
                     }
-                    val singleBookMode = matchingBooksByTags.size == 1 && !state.directPageView
-                    
+                    val matchingCount = matchingBooksByTags.size
+                    _uiState.update { it.copy(matchingCount = matchingCount) }
+
                     val booksToProcess = if (matchingBooksByTags.isNotEmpty()) matchingBooksByTags else booksToSearch
                     val totalBooks = booksToProcess.size
                     var booksProcessed = 0
@@ -347,10 +348,10 @@ class SearchViewModel @Inject constructor(
                                 tagQueries = tagQueries,
                                 negativeTagQueries = negTagQueries,
                                 customRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null,
-                                maxPerBook = if (state.directPageView || singleBookMode) 500 else state.maxPerBook,
-                                stopAtFirstMatch = (!state.directPageView && !singleBookMode),
+                                maxPerBook = if (state.directPageView || matchingCount == 1) 500 else state.maxPerBook,
+                                stopAtFirstMatch = (!state.directPageView && matchingCount != 1),
                                 searchMode = state.searchMode,
-                                globalLimit = if (state.directPageView || singleBookMode) 500 else 0
+                                globalLimit = if (state.directPageView || matchingCount == 1) 500 else 0
                             )
 
                             val highlighted = partialResults.map { result ->
@@ -374,10 +375,10 @@ class SearchViewModel @Inject constructor(
 
                             synchronized(this@SearchViewModel) {
                                 val currentCount = _uiState.value.results.size
-                                if (state.directPageView && currentCount >= 500) return@synchronized
+                                if ((state.directPageView || matchingCount == 1) && currentCount >= 500) return@synchronized
 
                                 booksProcessed++
-                                val resultsToAdd = if (state.directPageView) {
+                                val resultsToAdd = if (state.directPageView || matchingCount == 1) {
                                     highlighted.take(500 - currentCount)
                                 } else {
                                     highlighted
@@ -385,24 +386,15 @@ class SearchViewModel @Inject constructor(
 
                                 if (resultsToAdd.isNotEmpty() || booksProcessed % 5 == 0 || booksProcessed == totalBooks) {
                                     _uiState.update { 
-                                        val newState = it.copy(
+                                        it.copy(
                                             searchProgress = booksProcessed.toFloat() / totalBooks,
-                                            currentBook = grantha.name
+                                            currentBook = grantha.name,
+                                            results = it.results + resultsToAdd
                                         )
-                                        
-                                        if (singleBookMode && resultsToAdd.isNotEmpty()) {
-                                            newState.copy(
-                                                selectedBookResults = grantha.name,
-                                                bookSnippets = resultsToAdd,
-                                                cachedBookSnippets = it.cachedBookSnippets + (grantha.name to resultsToAdd)
-                                            )
-                                        } else {
-                                            newState.copy(results = it.results + resultsToAdd)
-                                        }
                                     }
                                 }
 
-                                if (state.directPageView && _uiState.value.results.size >= 500) {
+                                if ((state.directPageView || matchingCount == 1) && _uiState.value.results.size >= 500) {
                                     _uiState.update { it.copy(currentBook = "Limit reached (500 matches)", searchProgress = 1f, limitReached = true) }
                                     searchJob?.cancel()
                                 }
