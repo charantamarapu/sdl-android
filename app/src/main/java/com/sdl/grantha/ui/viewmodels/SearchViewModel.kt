@@ -314,11 +314,19 @@ class SearchViewModel @Inject constructor(
                         downloaded
                     }
 
-                    val totalBooks = booksToSearch.size
+                    // Determine if we are in "single book mode" (only one book matches the tags/name)
+                    // If so, we'll fetch all matches in that book directly like the web app does.
+                    val matchingBooksByTags = booksToSearch.filter { grantha ->
+                        SearchEngine.matchesTags(grantha.tags.lowercase(), grantha.name.lowercase(), grantha.subbooksRaw.lowercase(), tagQueries, negTagQueries)
+                    }
+                    val singleBookMode = matchingBooksByTags.size == 1 && !state.directPageView
+                    
+                    val booksToProcess = if (matchingBooksByTags.isNotEmpty()) matchingBooksByTags else booksToSearch
+                    val totalBooks = booksToProcess.size
                     var booksProcessed = 0
 
                     val concurrency = Runtime.getRuntime().availableProcessors()
-                    booksToSearch.asFlow().flatMapMerge(concurrency = concurrency) { grantha ->
+                    booksToProcess.asFlow().flatMapMerge(concurrency = concurrency) { grantha ->
                         flow {
                             yield()
                             val text = if (SearchEngine.hasCache(grantha.name)) "" else repository.getGranthaText(grantha.name)
@@ -339,10 +347,10 @@ class SearchViewModel @Inject constructor(
                                 tagQueries = tagQueries,
                                 negativeTagQueries = negTagQueries,
                                 customRules = if (state.sanskritNormalize) state.customRules.ifEmpty { null } else null,
-                                maxPerBook = if (state.directPageView) 500 else state.maxPerBook,
-                                stopAtFirstMatch = (!state.directPageView),
+                                maxPerBook = if (state.directPageView || singleBookMode) 500 else state.maxPerBook,
+                                stopAtFirstMatch = (!state.directPageView && !singleBookMode),
                                 searchMode = state.searchMode,
-                                globalLimit = if (state.directPageView) 500 else 0
+                                globalLimit = if (state.directPageView || singleBookMode) 500 else 0
                             )
 
                             val highlighted = partialResults.map { result ->
@@ -377,11 +385,20 @@ class SearchViewModel @Inject constructor(
 
                                 if (resultsToAdd.isNotEmpty() || booksProcessed % 5 == 0 || booksProcessed == totalBooks) {
                                     _uiState.update { 
-                                        it.copy(
+                                        val newState = it.copy(
                                             searchProgress = booksProcessed.toFloat() / totalBooks,
-                                            currentBook = grantha.name,
-                                            results = it.results + resultsToAdd
-                                        ) 
+                                            currentBook = grantha.name
+                                        )
+                                        
+                                        if (singleBookMode && resultsToAdd.isNotEmpty()) {
+                                            newState.copy(
+                                                selectedBookResults = grantha.name,
+                                                bookSnippets = resultsToAdd,
+                                                cachedBookSnippets = it.cachedBookSnippets + (grantha.name to resultsToAdd)
+                                            )
+                                        } else {
+                                            newState.copy(results = it.results + resultsToAdd)
+                                        }
                                     }
                                 }
 
